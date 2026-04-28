@@ -1,9 +1,9 @@
 IMAGE_REGISTRY ?= quay.io/melserng
-IMAGE_NAME     ?= test-assisted-agent
+IMAGE_NAME     ?= env-healing-agent
 IMAGE_TAG      ?= latest
 IMAGE          := $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 
-# Build context is the agent-v2/ directory (this Makefile lives there).
+# Build context is the env-healing-agent/ directory (this Makefile lives there).
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 .PHONY: build push image-build image-push deploy undeploy help
@@ -35,7 +35,7 @@ image-push: push
 
 deploy:
 	@test -n "$(ANTHROPIC_API_KEY)" || (echo "ERROR: ANTHROPIC_API_KEY is not set" && exit 1)
-	oc create secret generic agent-v2-anthropic \
+	oc create secret generic env-healing-agent-anthropic \
 	  --from-literal=api-key=$(ANTHROPIC_API_KEY) \
 	  -n rosa-hcp-agent \
 	  --dry-run=client -o yaml | oc apply -f -
@@ -49,4 +49,4 @@ undeploy:
 	oc delete -f $(MAKEFILE_DIR)deploy/deployment.yaml --ignore-not-found
 	oc delete -f $(MAKEFILE_DIR)deploy/rbac.yaml       --ignore-not-found
 	oc delete -f $(MAKEFILE_DIR)deploy/configmap.yaml  --ignore-not-found
-	oc delete secret agent-v2-anthropic -n rosa-hcp-agent --ignore-not-found
+	oc delete secret env-healing-agent-anthropic -n rosa-hcp-agent --ignore-not-found

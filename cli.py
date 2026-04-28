@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent v2 CLI
+env-healing-agent CLI
 ============
 
 Run the self-healing agent pipeline with any supported test framework.
@@ -8,34 +8,34 @@ Run the self-healing agent pipeline with any supported test framework.
 Usage examples:
 
     # Ansible playbook
-    python -m agent_v2.cli ansible playbooks/create_rosa_hcp_cluster.yml \
+    python -m env_healing_agent.cli ansible playbooks/create_rosa_hcp_cluster.yml \
         -e name_prefix=test -e AWS_REGION=us-east-1
 
     # Ansible with sidecar log file
-    python -m agent_v2.cli ansible playbooks/delete_rosa_hcp_cluster.yml \
+    python -m env_healing_agent.cli ansible playbooks/delete_rosa_hcp_cluster.yml \
         --sidecar-log /tmp/deletion-agent-mycluster.log
 
     # pytest
-    python -m agent_v2.cli pytest tests/ -m integration
+    python -m env_healing_agent.cli pytest tests/ -m integration
 
     # Shell script
-    python -m agent_v2.cli shell run-tests.sh --args "--suite smoke"
+    python -m env_healing_agent.cli shell run-tests.sh --args "--suite smoke"
 
     # Any command
-    python -m agent_v2.cli generic go test ./... -v
+    python -m env_healing_agent.cli generic go test ./... -v
 
     # Pipe from another process
-    some-runner | python -m agent_v2.cli pipe
+    some-runner | python -m env_healing_agent.cli pipe
 
     # With Kubernetes log stream alongside
-    python -m agent_v2.cli ansible playbooks/foo.yml \
+    python -m env_healing_agent.cli ansible playbooks/foo.yml \
         --k8s-pod my-controller-pod --k8s-namespace capi-system
 
     # Dry run (detect but don't fix)
-    python -m agent_v2.cli ansible playbooks/foo.yml --dry-run
+    python -m env_healing_agent.cli ansible playbooks/foo.yml --dry-run
 
     # Verbose
-    python -m agent_v2.cli ansible playbooks/foo.yml -v
+    python -m env_healing_agent.cli ansible playbooks/foo.yml -v
 """
 
 import argparse
@@ -48,7 +48,7 @@ _DEFAULT_KB = Path(__file__).parent / "knowledge_base"
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="agent-v2",
+        prog="env-healing-agent",
         description="Self-healing test agent — framework-agnostic, multi-stream log monitoring.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
@@ -121,15 +121,15 @@ def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    from agent_v2.core.pipeline import AgentPipeline
-    from agent_v2.frameworks import (
+    from env_healing_agent.core.pipeline import AgentPipeline
+    from env_healing_agent.frameworks import (
         AnsibleFramework,
         PytestFramework,
         ShellFramework,
         GenericSubprocessFramework,
         PipeFramework,
     )
-    from agent_v2.log_streams import KubernetesLogStream, FileTailStream, JournaldStream, CloudWatchStream
+    from env_healing_agent.log_streams import KubernetesLogStream, FileTailStream, JournaldStream, CloudWatchStream
 
     kb_dir = Path(args.kb_dir)
 

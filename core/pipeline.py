@@ -13,13 +13,13 @@ Key design:
     protected by a lock so multi-stream lines don't interleave mid-diagnosis
 
 Usage:
-    from agent_v2.core.pipeline import AgentPipeline
-    from agent_v2.frameworks import AnsibleFramework
+    from env_healing_agent.core.pipeline import AgentPipeline
+    from env_healing_agent.frameworks import AnsibleFramework
     from pathlib import Path
 
     pipeline = AgentPipeline(
         framework=AnsibleFramework("playbooks/create_rosa_hcp_cluster.yml"),
-        kb_dir=Path("agent-v2/knowledge_base"),
+        kb_dir=Path("env-healing-agent/knowledge_base"),
         enabled=True,
     )
     pipeline.run()

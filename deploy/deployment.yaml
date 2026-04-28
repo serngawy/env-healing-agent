@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent-v2
+  name: env-healing-agent
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2
+    app: env-healing-agent
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: agent-v2
+      app: env-healing-agent
   template:
     metadata:
       labels:
-        app: agent-v2
+        app: env-healing-agent
     spec:
-      serviceAccountName: agent-v2
+      serviceAccountName: env-healing-agent
 
       # -----------------------------------------------------------------------
       # Init container: merge all ConfigMap chunks into a single emptyDir.
       #
       # To add a new chunk for any JSON file:
-      #   1. Create the new ConfigMap (e.g. agent-v2-known-issues-3).
+      #   1. Create the new ConfigMap (e.g. env-healing-agent-known-issues-3).
       #   2. Add a volume below referencing it.
       #   3. Add a volumeMount to this init container at the next numbered path
       #      (e.g. /cms/known-issues/3).
@@ -54,8 +54,8 @@ spec:
       # Main container
       # -----------------------------------------------------------------------
       containers:
-        - name: agent-v2
-          # Build: docker build -t agent-v2:latest agent-v2/
+        - name: env-healing-agent
+          # Build: docker build -t env-healing-agent:latest env-healing-agent/
           # Push to your registry then update this field.
           image: quay.io/melserng/test-assisted-agent:latest
           imagePullPolicy: Always
@@ -63,7 +63,7 @@ spec:
           # Run in generic mode with a no-op main process.
           # The agent monitors Kubernetes pod logs via --k8s-label.
           # Override WATCH_LABEL / WATCH_NAMESPACE to target your test pods.
-          command: ["python", "-m", "agent_v2.cli"]
+          command: ["python", "-m", "env_healing_agent.cli"]
           args:
             - "generic"
             - "sleep"
@@ -86,23 +86,23 @@ spec:
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-anthropic
+                  name: env-healing-agent-anthropic
                   key: api-key
             # AWS credentials for fix strategies (retry_cloudformation_delete, cleanup_vpc_dependencies)
             - name: AWS_DEFAULT_REGION
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: region
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: access-key-id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: secret-access-key
 
           volumeMounts:
@@ -128,14 +128,14 @@ spec:
 
           livenessProbe:
             exec:
-              command: ["pgrep", "-f", "agent_v2.cli"]
+              command: ["pgrep", "-f", "env_healing_agent.cli"]
             initialDelaySeconds: 15
             periodSeconds: 30
             failureThreshold: 3
 
           readinessProbe:
             exec:
-              command: ["python", "-c", "import agent_v2"]
+              command: ["python", "-c", "import env_healing_agent"]
             initialDelaySeconds: 10
             periodSeconds: 15
 
@@ -150,25 +150,25 @@ spec:
         # Merge script
         - name: init-script
           configMap:
-            name: agent-v2-init-script
+            name: env-healing-agent-init-script
 
         # known_issues chunks — add more here as the file grows
         - name: known-issues-1
           configMap:
-            name: agent-v2-known-issues-1
+            name: env-healing-agent-known-issues-1
         - name: known-issues-2
           configMap:
-            name: agent-v2-known-issues-2
+            name: env-healing-agent-known-issues-2
 
         # fix_strategies chunks
         - name: fix-strategies-1
           configMap:
-            name: agent-v2-fix-strategies-1
+            name: env-healing-agent-fix-strategies-1
 
         # remediation_outcomes chunks
         - name: remediation-outcomes-1
           configMap:
-            name: agent-v2-remediation-outcomes-1
+            name: env-healing-agent-remediation-outcomes-1
 
         # -----------------------------------------------------------------------
         # Optional: FileTailStream — mount a host log file or emptyDir log path.

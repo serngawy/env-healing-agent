@@ -1,5 +1,5 @@
 """
-Monitoring Agent v2
+Monitoring env-healing-agent
 ===================
 
 Real-time log monitoring with framework-agnostic context parsing.

@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: agent-v2
+  name: env-healing-agent
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2
+    app: env-healing-agent
 spec:
   type: ClusterIP
   selector:
-    app: agent-v2
+    app: env-healing-agent
   ports:
     - name: metrics
       port: 8080

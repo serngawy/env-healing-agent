@@ -1,7 +1,7 @@
 # PipeStream — read log lines fed into stdin from a sidecar process
 #
 # Scenario: A test-runner sidecar writes its output to a named pipe (FIFO)
-# in a shared emptyDir volume. The agent-v2 container reads from that FIFO
+# in a shared emptyDir volume. The env-healing-agent container reads from that FIFO
 # via stdin (pipe subcommand). Both containers start together; the agent
 # monitors every line the runner produces, in real time.
 #
@@ -21,22 +21,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent-v2-pipe
+  name: env-healing-agent-pipe
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2-pipe
+    app: env-healing-agent-pipe
     stream-type: pipe
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: agent-v2-pipe
+      app: env-healing-agent-pipe
   template:
     metadata:
       labels:
-        app: agent-v2-pipe
+        app: env-healing-agent-pipe
     spec:
-      serviceAccountName: agent-v2
+      serviceAccountName: env-healing-agent
 
       # Create the FIFO before either container starts so both can open it.
       initContainers:
@@ -81,14 +81,14 @@ spec:
         # ----------------------------------------------------------------
         # Agent: reads from the FIFO via stdin (pipe subcommand).
         # ----------------------------------------------------------------
-        - name: agent-v2
+        - name: env-healing-agent
           image: quay.io/melserng/test-assisted-agent:latest
           imagePullPolicy: Always
           # The shell redirect feeds the FIFO into the agent's stdin.
           command: ["/bin/sh", "-c"]
           args:
             - >
-              python -m agent_v2.cli pipe
+              python -m env_healing_agent.cli pipe
               --kb-dir /kb
               --verbose
               --report
@@ -99,7 +99,7 @@ spec:
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-anthropic
+                  name: env-healing-agent-anthropic
                   key: api-key
           volumeMounts:
             - name: knowledge-base
@@ -115,7 +115,7 @@ spec:
               memory: 512Mi
           livenessProbe:
             exec:
-              command: ["pgrep", "-f", "agent_v2.cli"]
+              command: ["pgrep", "-f", "env_healing_agent.cli"]
             initialDelaySeconds: 10
             periodSeconds: 30
 
@@ -126,16 +126,16 @@ spec:
           emptyDir: {}         # tmpfs — FIFO lives in memory, no disk I/O
         - name: init-script
           configMap:
-            name: agent-v2-init-script
+            name: env-healing-agent-init-script
         - name: known-issues-1
           configMap:
-            name: agent-v2-known-issues-1
+            name: env-healing-agent-known-issues-1
         - name: known-issues-2
           configMap:
-            name: agent-v2-known-issues-2
+            name: env-healing-agent-known-issues-2
         - name: fix-strategies-1
           configMap:
-            name: agent-v2-fix-strategies-1
+            name: env-healing-agent-fix-strategies-1
         - name: remediation-outcomes-1
           configMap:
-            name: agent-v2-remediation-outcomes-1
+            name: env-healing-agent-remediation-outcomes-1

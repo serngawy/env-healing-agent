@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.source="https://github.com/serngawy/rosa-hcp-e2e-test" \
-      org.opencontainers.image.description="Agent v2 — framework-agnostic self-healing test agent"
+      org.opencontainers.image.description="env-healing-agent — framework-agnostic self-healing test agent"
 
 # Tools used by remediation shell steps and log streams
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,17 +27,17 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the package. Build context is the agent-v2/ directory; the destination
-# name agent_v2 matches the Python import name (directory name uses a hyphen
+# Copy the package. Build context is the env-healing-agent/ directory; the destination
+# name env_healing_agent matches the Python import name (directory name uses a hyphen
 # which is not valid in import paths).
-COPY . /app/agent_v2/
+COPY . /app/env_healing_agent/
 
 # The knowledge_base directory can be overridden by mounting a ConfigMap here,
 # allowing issue patterns and fix strategies to be updated without rebuilding.
-VOLUME ["/app/agent_v2/knowledge_base"]
+VOLUME ["/app/env_healing_agent/knowledge_base"]
 
-ENV KB_DIR=/app/agent_v2/knowledge_base \
+ENV KB_DIR=/app/env_healing_agent/knowledge_base \
     PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["python", "-m", "agent_v2.cli"]
+ENTRYPOINT ["python", "-m", "env_healing_agent.cli"]
 CMD ["--help"]

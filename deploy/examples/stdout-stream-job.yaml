@@ -13,7 +13,7 @@
 # Prerequisites:
 #   oc apply -f ../configmap.yaml
 #   oc apply -f ../rbac.yaml
-#   oc create secret generic agent-v2-aws-credentials ... -n rosa-hcp-agent
+#   oc create secret generic env-healing-agent-aws-credentials ... -n rosa-hcp-agent
 #   oc create configmap my-playbooks --from-file=path/to/playbooks/ -n rosa-hcp-agent
 #
 # Variants shown below — uncomment the one you need.
@@ -21,10 +21,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: agent-v2-ansible-run
+  name: env-healing-agent-ansible-run
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2-stdout
+    app: env-healing-agent-stdout
     stream-type: stdout
 spec:
   backoffLimit: 0        # do not retry on failure — agent has already attempted fixes
@@ -32,9 +32,9 @@ spec:
   template:
     metadata:
       labels:
-        app: agent-v2-stdout
+        app: env-healing-agent-stdout
     spec:
-      serviceAccountName: agent-v2
+      serviceAccountName: env-healing-agent
       restartPolicy: Never
 
       initContainers:
@@ -56,14 +56,14 @@ spec:
               mountPath: /cms/remediation-outcomes/1
 
       containers:
-        - name: agent-v2
+        - name: env-healing-agent
           image: quay.io/melserng/test-assisted-agent:latest
           imagePullPolicy: Always
 
           # ----------------------------------------------------------------
           # Variant A — Ansible playbook
           # ----------------------------------------------------------------
-          command: ["python", "-m", "agent_v2.cli"]
+          command: ["python", "-m", "env_healing_agent.cli"]
           args:
             - "ansible"
             - "/playbooks/delete-rosa-hcp-cluster.yml"
@@ -79,7 +79,7 @@ spec:
           # ----------------------------------------------------------------
           # Variant B — pytest suite (comment out Variant A and uncomment)
           # ----------------------------------------------------------------
-          # command: ["python", "-m", "agent_v2.cli"]
+          # command: ["python", "-m", "env_healing_agent.cli"]
           # args:
           #   - "pytest"
           #   - "/tests"
@@ -93,7 +93,7 @@ spec:
           # ----------------------------------------------------------------
           # Variant C — arbitrary shell script (comment out Variant A)
           # ----------------------------------------------------------------
-          # command: ["python", "-m", "agent_v2.cli"]
+          # command: ["python", "-m", "env_healing_agent.cli"]
           # args:
           #   - "shell"
           #   - "/scripts/run-suite.sh"
@@ -111,29 +111,29 @@ spec:
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-anthropic
+                  name: env-healing-agent-anthropic
                   key: api-key
             - name: AWS_DEFAULT_REGION
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: region
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: access-key-id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: secret-access-key
 
           volumeMounts:
             - name: knowledge-base
               mountPath: /kb
             # Playbooks supplied via ConfigMap. For real workloads, bake
-            # playbooks into a custom image derived from agent-v2:latest.
+            # playbooks into a custom image derived from env-healing-agent:latest.
             - name: playbooks
               mountPath: /playbooks
 
@@ -142,19 +142,19 @@ spec:
           emptyDir: {}
         - name: init-script
           configMap:
-            name: agent-v2-init-script
+            name: env-healing-agent-init-script
         - name: known-issues-1
           configMap:
-            name: agent-v2-known-issues-1
+            name: env-healing-agent-known-issues-1
         - name: known-issues-2
           configMap:
-            name: agent-v2-known-issues-2
+            name: env-healing-agent-known-issues-2
         - name: fix-strategies-1
           configMap:
-            name: agent-v2-fix-strategies-1
+            name: env-healing-agent-fix-strategies-1
         - name: remediation-outcomes-1
           configMap:
-            name: agent-v2-remediation-outcomes-1
+            name: env-healing-agent-remediation-outcomes-1
         # User-supplied playbooks ConfigMap. Create with:
         #   oc create configmap my-playbooks \
         #     --from-file=delete-rosa-hcp-cluster.yml=path/to/playbook.yml \

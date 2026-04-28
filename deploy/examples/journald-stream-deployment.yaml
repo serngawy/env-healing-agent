@@ -25,22 +25,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent-v2-journald
+  name: env-healing-agent-journald
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2-journald
+    app: env-healing-agent-journald
     stream-type: journald
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: agent-v2-journald
+      app: env-healing-agent-journald
   template:
     metadata:
       labels:
-        app: agent-v2-journald
+        app: env-healing-agent-journald
     spec:
-      serviceAccountName: agent-v2
+      serviceAccountName: env-healing-agent
       # Required so journalctl can resolve user/group names from the host.
       hostPID: true
 
@@ -63,10 +63,10 @@ spec:
               mountPath: /cms/remediation-outcomes/1
 
       containers:
-        - name: agent-v2
+        - name: env-healing-agent
           image: quay.io/melserng/test-assisted-agent:latest
           imagePullPolicy: Always
-          command: ["python", "-m", "agent_v2.cli"]
+          command: ["python", "-m", "env_healing_agent.cli"]
           args:
             - "generic"
             - "sleep"
@@ -88,7 +88,7 @@ spec:
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-anthropic
+                  name: env-healing-agent-anthropic
                   key: api-key
           volumeMounts:
             - name: knowledge-base
@@ -106,7 +106,7 @@ spec:
               memory: 512Mi
           livenessProbe:
             exec:
-              command: ["pgrep", "-f", "agent_v2.cli"]
+              command: ["pgrep", "-f", "env_healing_agent.cli"]
             initialDelaySeconds: 15
             periodSeconds: 30
           # Adjust if the cluster SCC requires it
@@ -118,19 +118,19 @@ spec:
           emptyDir: {}
         - name: init-script
           configMap:
-            name: agent-v2-init-script
+            name: env-healing-agent-init-script
         - name: known-issues-1
           configMap:
-            name: agent-v2-known-issues-1
+            name: env-healing-agent-known-issues-1
         - name: known-issues-2
           configMap:
-            name: agent-v2-known-issues-2
+            name: env-healing-agent-known-issues-2
         - name: fix-strategies-1
           configMap:
-            name: agent-v2-fix-strategies-1
+            name: env-healing-agent-fix-strategies-1
         - name: remediation-outcomes-1
           configMap:
-            name: agent-v2-remediation-outcomes-1
+            name: env-healing-agent-remediation-outcomes-1
         # Mount the host systemd journal read-only.
         # /run/log/journal is the volatile (RAM) journal; prefer /var/log/journal
         # for persistent storage, which is available when Storage=persistent is

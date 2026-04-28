@@ -12,7 +12,7 @@
 # Prerequisites:
 #   oc apply -f ../configmap.yaml
 #   oc apply -f ../rbac.yaml
-#   oc create secret generic agent-v2-aws-credentials \
+#   oc create secret generic env-healing-agent-aws-credentials \
 #     --from-literal=access-key-id=<KEY> \
 #     --from-literal=secret-access-key=<SECRET> \
 #     --from-literal=region=us-east-1 \
@@ -27,22 +27,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent-v2-cloudwatch
+  name: env-healing-agent-cloudwatch
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2-cloudwatch
+    app: env-healing-agent-cloudwatch
     stream-type: cloudwatch
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: agent-v2-cloudwatch
+      app: env-healing-agent-cloudwatch
   template:
     metadata:
       labels:
-        app: agent-v2-cloudwatch
+        app: env-healing-agent-cloudwatch
     spec:
-      serviceAccountName: agent-v2
+      serviceAccountName: env-healing-agent
 
       initContainers:
         - name: merge-knowledge-base
@@ -63,10 +63,10 @@ spec:
               mountPath: /cms/remediation-outcomes/1
 
       containers:
-        - name: agent-v2
+        - name: env-healing-agent
           image: quay.io/melserng/test-assisted-agent:latest
           imagePullPolicy: Always
-          command: ["python", "-m", "agent_v2.cli"]
+          command: ["python", "-m", "env_healing_agent.cli"]
           args:
             - "generic"
             - "sleep"
@@ -96,23 +96,23 @@ spec:
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-anthropic
+                  name: env-healing-agent-anthropic
                   key: api-key
             # AWS credentials for boto3
             - name: AWS_DEFAULT_REGION
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: region
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: access-key-id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: agent-v2-aws-credentials
+                  name: env-healing-agent-aws-credentials
                   key: secret-access-key
             # --- IRSA alternative (comment out the Secret env vars above) ---
             # - name: AWS_ROLE_ARN
@@ -131,7 +131,7 @@ spec:
               memory: 512Mi
           livenessProbe:
             exec:
-              command: ["pgrep", "-f", "agent_v2.cli"]
+              command: ["pgrep", "-f", "env_healing_agent.cli"]
             initialDelaySeconds: 15
             periodSeconds: 30
 
@@ -140,16 +140,16 @@ spec:
           emptyDir: {}
         - name: init-script
           configMap:
-            name: agent-v2-init-script
+            name: env-healing-agent-init-script
         - name: known-issues-1
           configMap:
-            name: agent-v2-known-issues-1
+            name: env-healing-agent-known-issues-1
         - name: known-issues-2
           configMap:
-            name: agent-v2-known-issues-2
+            name: env-healing-agent-known-issues-2
         - name: fix-strategies-1
           configMap:
-            name: agent-v2-fix-strategies-1
+            name: env-healing-agent-fix-strategies-1
         - name: remediation-outcomes-1
           configMap:
-            name: agent-v2-remediation-outcomes-1
+            name: env-healing-agent-remediation-outcomes-1

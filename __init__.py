@@ -1,11 +1,11 @@
 """
-Agent v2 — Framework-agnostic self-healing test agent.
+env-healing-agent — Framework-agnostic self-healing test agent.
 
 Quick start:
 
-    from agent_v2.core.pipeline import AgentPipeline
-    from agent_v2.frameworks import AnsibleFramework, PytestFramework, ShellFramework
-    from agent_v2.log_streams import KubernetesLogStream, FileTailStream
+    from env_healing_agent.core.pipeline import AgentPipeline
+    from env_healing_agent.frameworks import AnsibleFramework, PytestFramework, ShellFramework
+    from env_healing_agent.log_streams import KubernetesLogStream, FileTailStream
     from pathlib import Path
 
     KB = Path(__file__).parent / "knowledge_base"
@@ -25,7 +25,7 @@ Quick start:
     pipeline.run()
 
     # Run with any subprocess + extra k8s log stream
-    from agent_v2.frameworks import GenericSubprocessFramework
+    from env_healing_agent.frameworks import GenericSubprocessFramework
     pipeline = AgentPipeline(
         framework=GenericSubprocessFramework(["go", "test", "./...", "-v"], name="go-test"),
         kb_dir=KB,

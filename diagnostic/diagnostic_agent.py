@@ -1,5 +1,5 @@
 """
-Diagnostic Agent v2
+Diagnostic env-healing-agent
 ===================
 
 Analyzes detected issues to determine root cause and recommended fixes.

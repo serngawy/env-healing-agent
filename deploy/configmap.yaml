@@ -6,15 +6,15 @@ metadata:
 ---
 # ---------------------------------------------------------------------------
 # known_issues.json — chunk 1 of 2 (patterns 1-6)
-# Add agent-v2-known-issues-3, -4, … when this file grows past ~900 KB.
+# Add env-healing-agent-known-issues-3, -4, … when this file grows past ~900 KB.
 # ---------------------------------------------------------------------------
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: agent-v2-known-issues-1
+  name: env-healing-agent-known-issues-1
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2
+    app: env-healing-agent
     knowledge-base: known-issues
 data:
   data.json: |
@@ -75,10 +75,10 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: agent-v2-known-issues-2
+  name: env-healing-agent-known-issues-2
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2
+    app: env-healing-agent
     knowledge-base: known-issues
 data:
   data.json: |
@@ -140,10 +140,10 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: agent-v2-fix-strategies-1
+  name: env-healing-agent-fix-strategies-1
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2
+    app: env-healing-agent
     knowledge-base: fix-strategies
 data:
   data.json: |
@@ -338,10 +338,10 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: agent-v2-remediation-outcomes-1
+  name: env-healing-agent-remediation-outcomes-1
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2
+    app: env-healing-agent
     knowledge-base: remediation-outcomes
 data:
   data.json: "[]"
@@ -355,10 +355,10 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: agent-v2-init-script
+  name: env-healing-agent-init-script
   namespace: rosa-hcp-agent
   labels:
-    app: agent-v2
+    app: env-healing-agent
 data:
   merge_kb.py: |
     """

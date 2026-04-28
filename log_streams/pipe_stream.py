@@ -4,11 +4,11 @@ Stdin pipe log stream.
 Reads log lines from sys.stdin or any file-like object. Useful for
 piping output from another process directly into the agent pipeline:
 
-    some-test-runner | python -m agent_v2 --framework pipe
+    some-test-runner | python -m env_healing_agent --framework pipe
 
 Or for testing with pre-recorded log files:
 
-    python -m agent_v2 --framework pipe < recorded.log
+    python -m env_healing_agent --framework pipe < recorded.log
 """
 
 import sys

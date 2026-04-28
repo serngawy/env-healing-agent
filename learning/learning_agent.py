@@ -1,5 +1,5 @@
 """
-Learning Agent v2
+Learning env-healing-agent
 =================
 
 Records remediation outcomes and adjusts knowledge base confidence scores.

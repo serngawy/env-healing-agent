@@ -14,7 +14,7 @@ Usage — any subprocess:
     )
 
 Usage — stdin pipe:
-    echo "ERROR: something bad" | python -m agent_v2.cli --framework pipe
+    echo "ERROR: something bad" | python -m env_healing_agent.cli --framework pipe
 
 Usage — pre-recorded log replay:
     framework = PipeFramework(source=open("recorded.log"))
@@ -77,7 +77,7 @@ class PipeFramework(BaseTestFramework):
     Framework that reads log lines from a pipe or file-like object.
 
     Useful for:
-      - Piping output from another process: some-runner | python agent_v2/cli.py
+      - Piping output from another process: some-runner | python env_healing_agent/cli.py
       - Replaying pre-recorded logs for testing: open("log.txt") as f
     """
 

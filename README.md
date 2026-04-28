@@ -1,4 +1,4 @@
-# Agent v2 — Framework-Agnostic Self-Healing Test Agent
+# env-healing-agent — Framework-Agnostic Self-Healing Test Agent
 
 An autonomous issue detection and remediation agent that can monitor, diagnose, and fix problems in **any test framework** while reading logs from **multiple simultaneous log sources**.
 
@@ -20,7 +20,7 @@ An autonomous issue detection and remediation agent that can monitor, diagnose, 
 
 ## Overview
 
-Agent v2 wraps any test runner and watches its output in real time. When a known issue pattern is detected, it runs a diagnostic→remediation→learning chain automatically:
+env-healing-agent wraps any test runner and watches its output in real time. When a known issue pattern is detected, it runs a diagnostic→remediation→learning chain automatically:
 
 ```
 Log Streams (stdout, file, k8s, CloudWatch, journald, ...)
@@ -45,7 +45,7 @@ Learning Agent     ── record outcome, adjust confidence scores
 ## Architecture
 
 ```
-agent-v2/
+env-healing-agent/
 ├── Dockerfile                      # Container image build
 ├── requirements.txt                # Python dependencies (boto3, kubernetes, ansible-core, pytest)
 ├── cli.py                          # CLI entry point
@@ -158,13 +158,13 @@ If `KUBERNETES_SERVICE_HOST` is set and `journal_path` is not provided, `start()
 ### Example: combining streams
 
 ```python
-from agent_v2.core.pipeline import AgentPipeline
-from agent_v2.frameworks import AnsibleFramework
-from agent_v2.log_streams import KubernetesLogStream, JournaldStream
+from env_healing_agent.core.pipeline import AgentPipeline
+from env_healing_agent.frameworks import AnsibleFramework
+from env_healing_agent.log_streams import KubernetesLogStream, JournaldStream
 
 pipeline = AgentPipeline(
     framework=AnsibleFramework("playbooks/create_rosa_hcp_cluster.yml"),
-    kb_dir=Path("agent-v2/knowledge_base"),
+    kb_dir=Path("env-healing-agent/knowledge_base"),
     extra_streams=[
         # SDK mode — auto-detected when KUBERNETES_SERVICE_HOST is set
         KubernetesLogStream(label_selector="app=capa-controller", namespace="capa-system"),
@@ -196,8 +196,8 @@ All frameworks implement `BaseTestFramework` and provide:
 ### Adding a custom framework
 
 ```python
-from agent_v2.frameworks.base_framework import BaseTestFramework
-from agent_v2.log_streams import StdoutStream
+from env_healing_agent.frameworks.base_framework import BaseTestFramework
+from env_healing_agent.log_streams import StdoutStream
 from typing import Dict, List, Optional
 
 class GoTestFramework(BaseTestFramework):
@@ -230,7 +230,7 @@ class GoTestFramework(BaseTestFramework):
 The CLI accepts a subcommand for each supported framework and a common set of flags.
 
 ```
-python -m agent_v2.cli <framework> [framework-args] [common-flags]
+python -m env_healing_agent.cli <framework> [framework-args] [common-flags]
 ```
 
 ### Common flags
@@ -242,7 +242,7 @@ python -m agent_v2.cli <framework> [framework-args] [common-flags]
 | `--confidence FLOAT` | Minimum confidence threshold (default: 0.7) |
 | `--no-echo` | Suppress echoing log lines to stdout |
 | `--report` | Print a JSON report when the run finishes |
-| `--kb-dir PATH` | Path to knowledge base (default: `agent-v2/knowledge_base`) |
+| `--kb-dir PATH` | Path to knowledge base (default: `env-healing-agent/knowledge_base`) |
 
 ### Extra log stream flags (can be combined with any framework)
 
@@ -264,43 +264,43 @@ python -m agent_v2.cli <framework> [framework-args] [common-flags]
 
 ```bash
 # Ansible playbook with sidecar log
-python -m agent_v2.cli ansible playbooks/create_rosa_hcp_cluster.yml \
+python -m env_healing_agent.cli ansible playbooks/create_rosa_hcp_cluster.yml \
     -e name_prefix=test -e AWS_REGION=us-east-1 \
     --sidecar-log /tmp/deletion-agent-mycluster.log
 
 # Ansible in dry-run mode
-python -m agent_v2.cli ansible playbooks/delete_rosa_hcp_cluster.yml --dry-run
+python -m env_healing_agent.cli ansible playbooks/delete_rosa_hcp_cluster.yml --dry-run
 
 # pytest with marker filter
-python -m agent_v2.cli pytest tests/ -m integration --verbose
+python -m env_healing_agent.cli pytest tests/ -m integration --verbose
 
 # Shell script + tail an extra log file
-python -m agent_v2.cli shell run-tests.sh \
+python -m env_healing_agent.cli shell run-tests.sh \
     --tail-file /var/log/my-test-runner.log
 
 # Any command (Go tests)
-python -m agent_v2.cli generic go test ./... -v --name go-test
+python -m env_healing_agent.cli generic go test ./... -v --name go-test
 
 # Pipe output from another process
-some-runner | python -m agent_v2.cli pipe
+some-runner | python -m env_healing_agent.cli pipe
 
 # Replay a pre-recorded log file
-python -m agent_v2.cli pipe < recorded.log
+python -m env_healing_agent.cli pipe < recorded.log
 
 # Ansible + watch Kubernetes controller logs via SDK (in-pod) + print report
-python -m agent_v2.cli ansible playbooks/foo.yml \
+python -m env_healing_agent.cli ansible playbooks/foo.yml \
     --k8s-label app=capa-controller --k8s-namespace capa-system \
     --report
 
 # Watch kubelet and crio from host journal (in-pod, hostPath mounted)
-python -m agent_v2.cli generic sleep infinity \
+python -m env_healing_agent.cli generic sleep infinity \
     --journald-unit kubelet \
     --journald-unit crio \
     --journald-path /host/var/log/journal \
     --verbose
 
 # Stream an AWS CloudWatch log group alongside an Ansible run
-python -m agent_v2.cli ansible playbooks/foo.yml \
+python -m env_healing_agent.cli ansible playbooks/foo.yml \
     --cloudwatch-log-group /aws/eks/my-cluster/cluster \
     --cloudwatch-region us-east-1 \
     --cloudwatch-filter "ERROR" \
@@ -314,13 +314,13 @@ python -m agent_v2.cli ansible playbooks/foo.yml \
 ### Minimal usage
 
 ```python
-from agent_v2.core.pipeline import AgentPipeline
-from agent_v2.frameworks import AnsibleFramework
+from env_healing_agent.core.pipeline import AgentPipeline
+from env_healing_agent.frameworks import AnsibleFramework
 from pathlib import Path
 
 pipeline = AgentPipeline(
     framework=AnsibleFramework("playbooks/create_rosa_hcp_cluster.yml"),
-    kb_dir=Path("agent-v2/knowledge_base"),
+    kb_dir=Path("env-healing-agent/knowledge_base"),
 )
 pipeline.run()
 ```
@@ -359,15 +359,15 @@ report = pipeline.get_report()
 ### Integrating into an existing test runner
 
 ```python
-from agent_v2.core.pipeline import AgentPipeline
-from agent_v2.frameworks.generic_framework import PipeFramework
+from env_healing_agent.core.pipeline import AgentPipeline
+from env_healing_agent.frameworks.generic_framework import PipeFramework
 import io
 
 log_source = io.StringIO(captured_output)
 
 pipeline = AgentPipeline(
     framework=PipeFramework(source=log_source),
-    kb_dir=Path("agent-v2/knowledge_base"),
+    kb_dir=Path("env-healing-agent/knowledge_base"),
     enabled=True,
     dry_run=False,
     echo=False,
@@ -479,7 +479,7 @@ Drives the remediation agent. Every fix is fully described in JSON — no Python
 
 **Adding a brand-new action type:**
 ```python
-from agent_v2.remediation.remediation_agent import ActionExecutor
+from env_healing_agent.remediation.remediation_agent import ActionExecutor
 
 class MyExecutor(ActionExecutor):
     def execute(self):
@@ -558,7 +558,7 @@ Confidence must reach the pipeline threshold (default 0.7) before remediation ru
 
 ```bash
 # Create the Secret
-oc create secret generic agent-v2-anthropic \
+oc create secret generic env-healing-agent-anthropic \
   --from-literal=api-key=<YOUR_KEY> \
   -n rosa-hcp-agent
 
@@ -566,7 +566,7 @@ oc create secret generic agent-v2-anthropic \
 ANTHROPIC_API_KEY=<YOUR_KEY> make deploy
 ```
 
-All deployment manifests already mount `ANTHROPIC_API_KEY` from the `agent-v2-anthropic` Secret.
+All deployment manifests already mount `ANTHROPIC_API_KEY` from the `env-healing-agent-anthropic` Secret.
 
 ### Remediation Agent
 
@@ -620,11 +620,11 @@ agent.register_executor("webhook", MyWebhookExecutor)
 
 ### Build
 
-A `Makefile` in `agent-v2/` wraps the build and push steps. The build context is the `agent-v2/` directory; the Dockerfile copies it as `agent_v2/` so it is importable as a Python package.
+A `Makefile` in `env-healing-agent/` wraps the build and push steps. The build context is the `env-healing-agent/` directory; the Dockerfile copies it as `env_healing_agent/` so it is importable as a Python package.
 
 ```bash
 # Build and push (default: quay.io/melserng/test-assisted-agent:latest)
-cd agent-v2/
+cd env-healing-agent/
 make push
 
 # Override registry, name, or tag
@@ -687,16 +687,16 @@ The knowledge base JSON files are stored as Kubernetes ConfigMaps so they can be
 
 | ConfigMap | Content | Key |
 |---|---|---|
-| `agent-v2-known-issues-1` | Issue patterns 1–6 | `data.json` |
-| `agent-v2-known-issues-2` | Issue patterns 7–12 | `data.json` |
-| `agent-v2-fix-strategies-1` | All fix strategies | `data.json` |
-| `agent-v2-remediation-outcomes-1` | `[]` (empty on first deploy) | `data.json` |
-| `agent-v2-init-script` | Python merge script | `merge_kb.py` |
+| `env-healing-agent-known-issues-1` | Issue patterns 1–6 | `data.json` |
+| `env-healing-agent-known-issues-2` | Issue patterns 7–12 | `data.json` |
+| `env-healing-agent-fix-strategies-1` | All fix strategies | `data.json` |
+| `env-healing-agent-remediation-outcomes-1` | `[]` (empty on first deploy) | `data.json` |
+| `env-healing-agent-init-script` | Python merge script | `merge_kb.py` |
 
 An **init container** (`python:3.11-slim`) runs `merge_kb.py` before the main container starts. It reads all numbered chunks from `/cms/<type>/<N>/data.json`, merges them, and writes the combined files to an `emptyDir` volume at `/kb`.
 
 **Adding a new chunk** when a file outgrows its ConfigMap:
-1. Create the new ConfigMap (e.g. `agent-v2-known-issues-3`).
+1. Create the new ConfigMap (e.g. `env-healing-agent-known-issues-3`).
 2. Add a `volume` referencing it in `deployment.yaml`.
 3. Add a `volumeMount` in the init container at `/cms/known-issues/3`.
 4. `oc apply` — no changes to the merge script needed.
@@ -704,7 +704,7 @@ An **init container** (`python:3.11-slim`) runs `merge_kb.py` before the main co
 ### RBAC
 
 `rbac.yaml` creates:
-- `ServiceAccount` — `agent-v2` in `rosa-hcp-agent` namespace
+- `ServiceAccount` — `env-healing-agent` in `rosa-hcp-agent` namespace
 - `ClusterRole` — get/list/watch pods, pods/log, namespaces, events, ROSA CRDs, deployments
 - `ClusterRoleBinding` — binds the role to the service account
 
@@ -712,17 +712,17 @@ An **init container** (`python:3.11-slim`) runs `merge_kb.py` before the main co
 
 ```bash
 # 1. Create the AWS credentials Secret (required by remediation fix strategies)
-oc create secret generic agent-v2-aws-credentials \
+oc create secret generic env-healing-agent-aws-credentials \
   --from-literal=access-key-id=<KEY> \
   --from-literal=secret-access-key=<SECRET> \
   --from-literal=region=us-east-1 \
   -n rosa-hcp-agent
 
 # 2. Apply base manifests
-oc apply -f agent-v2/deploy/configmap.yaml
-oc apply -f agent-v2/deploy/rbac.yaml
-oc apply -f agent-v2/deploy/deployment.yaml
-oc apply -f agent-v2/deploy/service.yaml
+oc apply -f env-healing-agent/deploy/configmap.yaml
+oc apply -f env-healing-agent/deploy/rbac.yaml
+oc apply -f env-healing-agent/deploy/deployment.yaml
+oc apply -f env-healing-agent/deploy/service.yaml
 ```
 
 ### Default deployment behaviour
@@ -741,9 +741,9 @@ Customise via environment variables in the Deployment:
 Each file in `deploy/examples/` is a self-contained manifest for one log stream type. Apply the base ConfigMaps and RBAC first, then any example:
 
 ```bash
-oc apply -f agent-v2/deploy/configmap.yaml
-oc apply -f agent-v2/deploy/rbac.yaml
-oc apply -f agent-v2/deploy/examples/<example>.yaml
+oc apply -f env-healing-agent/deploy/configmap.yaml
+oc apply -f env-healing-agent/deploy/rbac.yaml
+oc apply -f env-healing-agent/deploy/examples/<example>.yaml
 ```
 
 | Example file | Stream | Use case |
@@ -759,7 +759,7 @@ oc apply -f agent-v2/deploy/examples/<example>.yaml
 
 ## Differences from v1
 
-| | v1 (`agents/`) | v2 (`agent-v2/`) |
+| | v1 (`agents/`) | v2 (`env-healing-agent/`) |
 |---|---|---|
 | **Framework support** | Ansible only | Ansible, pytest, shell, generic, pipe |
 | **Log streams** | subprocess stdout + sidecar file | stdout, file tail, k8s SDK/subprocess, stdin, CloudWatch, journald |
