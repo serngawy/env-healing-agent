@@ -1,0 +1,155 @@
+# CloudWatchStream — poll an AWS CloudWatch Logs group
+#
+# Scenario: The agent continuously polls a CloudWatch log group (e.g. EKS
+# control-plane logs, a Lambda function, or an application log group) and
+# feeds every new event through the monitoring pipeline.
+#
+# Authentication: boto3 uses the standard AWS credential chain in order:
+#   1. AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars (from Secret below)
+#   2. IRSA web-identity token   — set AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE
+#   3. EC2/EKS instance metadata — automatic if the node has an IAM role
+#
+# Prerequisites:
+#   oc apply -f ../configmap.yaml
+#   oc apply -f ../rbac.yaml
+#   oc create secret generic agent-v2-aws-credentials \
+#     --from-literal=access-key-id=<KEY> \
+#     --from-literal=secret-access-key=<SECRET> \
+#     --from-literal=region=us-east-1 \
+#     -n rosa-hcp-agent
+#
+# Customise:
+#   CLOUDWATCH_LOG_GROUP — the log group to watch
+#   CLOUDWATCH_REGION    — AWS region
+#   CLOUDWATCH_FILTER    — CloudWatch filter pattern (empty = all events)
+#   CLOUDWATCH_POLL      — poll interval in seconds
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-v2-cloudwatch
+  namespace: rosa-hcp-agent
+  labels:
+    app: agent-v2-cloudwatch
+    stream-type: cloudwatch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-v2-cloudwatch
+  template:
+    metadata:
+      labels:
+        app: agent-v2-cloudwatch
+    spec:
+      serviceAccountName: agent-v2
+
+      initContainers:
+        - name: merge-knowledge-base
+          image: python:3.11-slim
+          command: ["python", "/scripts/merge_kb.py"]
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            - name: init-script
+              mountPath: /scripts
+            - name: known-issues-1
+              mountPath: /cms/known-issues/1
+            - name: known-issues-2
+              mountPath: /cms/known-issues/2
+            - name: fix-strategies-1
+              mountPath: /cms/fix-strategies/1
+            - name: remediation-outcomes-1
+              mountPath: /cms/remediation-outcomes/1
+
+      containers:
+        - name: agent-v2
+          image: quay.io/melserng/test-assisted-agent:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "agent_v2.cli"]
+          args:
+            - "generic"
+            - "sleep"
+            - "infinity"
+            - "--kb-dir"
+            - "/kb"
+            - "--cloudwatch-log-group"
+            - "$(CLOUDWATCH_LOG_GROUP)"
+            - "--cloudwatch-region"
+            - "$(CLOUDWATCH_REGION)"
+            - "--cloudwatch-filter"
+            - "$(CLOUDWATCH_FILTER)"
+            - "--cloudwatch-poll"
+            - "$(CLOUDWATCH_POLL)"
+            - "--verbose"
+          env:
+            - name: CLOUDWATCH_LOG_GROUP
+              value: "/aws/eks/my-cluster/cluster"
+            - name: CLOUDWATCH_REGION
+              value: "us-east-1"
+            - name: CLOUDWATCH_FILTER
+              value: ""          # Empty = stream all events
+            - name: CLOUDWATCH_POLL
+              value: "5"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-anthropic
+                  key: api-key
+            # AWS credentials for boto3
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: region
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: secret-access-key
+            # --- IRSA alternative (comment out the Secret env vars above) ---
+            # - name: AWS_ROLE_ARN
+            #   value: "arn:aws:iam::123456789012:role/my-agent-role"
+            # - name: AWS_WEB_IDENTITY_TOKEN_FILE
+            #   value: "/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "agent_v2.cli"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+
+      volumes:
+        - name: knowledge-base
+          emptyDir: {}
+        - name: init-script
+          configMap:
+            name: agent-v2-init-script
+        - name: known-issues-1
+          configMap:
+            name: agent-v2-known-issues-1
+        - name: known-issues-2
+          configMap:
+            name: agent-v2-known-issues-2
+        - name: fix-strategies-1
+          configMap:
+            name: agent-v2-fix-strategies-1
+        - name: remediation-outcomes-1
+          configMap:
+            name: agent-v2-remediation-outcomes-1

@@ -1,0 +1,223 @@
+{
+  "version": "1.0.0",
+  "description": "Known issues and error patterns for ROSA HCP test automation",
+  "patterns": [
+    {
+      "type": "cloudformation_deletion_failure",
+      "pattern": "CloudFormation stack DELETE_FAILED:.*|FAILED - RETRYING.*cloudformation.*deletion",
+      "severity": "high",
+      "auto_fix": true,
+      "description": "AWS CloudFormation stack deletion failure — ROSA creates security groups outside CF that block VPC deletion",
+      "symptoms": [
+        "Stack in DELETE_FAILED state",
+        "Orphaned AWS resources",
+        "Security group dependencies"
+      ],
+      "common_causes": [
+        "ROSA-created security groups (e.g. *-vpce-private-router) not managed by CloudFormation",
+        "VPC endpoint ENI attachments not cleaned up",
+        "Resources created outside CloudFormation blocking stack deletion"
+      ],
+      "learned_confidence": 1.0,
+      "last_adjusted": "2026-03-31T16:10:22.909159",
+      "adjustment_reason": "4 consecutive successes in last 4 runs"
+    },
+    {
+      "type": "ocm_auth_failure",
+      "pattern": ".*(ocm|openshift cluster manager).*(401|403|unauthorized|forbidden).*",
+      "severity": "medium",
+      "auto_fix": true,
+      "description": "OpenShift Cluster Manager authentication failure",
+      "symptoms": [
+        "401/403 HTTP errors from OCM API",
+        "Token expired messages",
+        "Unauthorized access errors"
+      ],
+      "common_causes": [
+        "Expired OCM token",
+        "Invalid client credentials",
+        "Incorrect client ID/secret"
+      ]
+    },
+    {
+      "type": "capi_not_installed",
+      "pattern": ".*(capi|cluster.*api).*(not found|does not exist|no.*running).*",
+      "severity": "high",
+      "auto_fix": false,
+      "description": "CAPI/CAPA controllers not installed or running",
+      "symptoms": [
+        "Controller deployments not found",
+        "capi-system namespace missing",
+        "capa-system namespace missing"
+      ],
+      "common_causes": [
+        "CAPI/CAPA not installed",
+        "Controllers crashed",
+        "MCE not properly configured"
+      ]
+    },
+    {
+      "type": "api_rate_limit",
+      "pattern": "^(?!.*(?:Pattern matched|Issue detected|Fix applied|Monitor|Remediation|RETRYING|retries left)).*(?:HTTP.*429|rate.limit.exceed|throttl.*request|too.many.requests.*api).*",
+      "severity": "low",
+      "auto_fix": true,
+      "description": "API rate limiting encountered",
+      "symptoms": [
+        "429 HTTP status codes",
+        "Rate limit exceeded messages",
+        "Throttling errors"
+      ],
+      "common_causes": [
+        "Too many API calls in short period",
+        "AWS API limits",
+        "OCM API limits"
+      ]
+    },
+    {
+      "type": "resource_quota_exceeded",
+      "pattern": ".*(quota|limit).*exceed.*",
+      "severity": "medium",
+      "auto_fix": false,
+      "description": "Resource quota or limit exceeded",
+      "symptoms": [
+        "Quota exceeded errors",
+        "Account limits reached",
+        "VPC limit errors"
+      ],
+      "common_causes": [
+        "AWS account limits",
+        "Too many clusters in region",
+        "VPC/subnet limits"
+      ]
+    },
+    {
+      "type": "rosacontrolplane_stuck_deletion",
+      "pattern": "FAILED - RETRYING.*(?:rosacontrolplane|ROSAControlPlane).*(?:delet|still exists)|FAILED - RETRYING.*(?:delet).*(?:rosacontrolplane|ROSAControlPlane)",
+      "severity": "high",
+      "auto_fix": true,
+      "description": "ROSAControlPlane stuck in deletion state due to finalizers or AWS resource cleanup",
+      "symptoms": [
+        "ROSAControlPlane has deletionTimestamp but won't delete",
+        "Ansible retrying ROSAControlPlane deletion continuously",
+        "Finalizers preventing resource deletion",
+        "ROSA cluster still deprovisioning in AWS"
+      ],
+      "common_causes": [
+        "Finalizers blocking deletion",
+        "ROSA cluster still deprovisioning in AWS",
+        "OCM API slow to respond",
+        "Controller unable to clean up resources"
+      ]
+    },
+    {
+      "type": "rosanetwork_stuck_deletion",
+      "pattern": "FAILED - RETRYING.*(?:rosanetwork|ROSANetwork).*(?:delet|still exists)|FAILED - RETRYING.*(?:delet).*(?:rosanetwork|ROSANetwork)",
+      "severity": "high",
+      "auto_fix": true,
+      "description": "ROSANetwork stuck in deletion state due to finalizers or VPC dependencies",
+      "symptoms": [
+        "ROSANetwork has deletionTimestamp but won't delete",
+        "Ansible retrying ROSANetwork deletion continuously",
+        "Finalizers preventing resource deletion",
+        "VPC or CloudFormation stack still exists"
+      ],
+      "common_causes": [
+        "Finalizers blocking deletion",
+        "Underlying CloudFormation stack stuck",
+        "VPC has orphaned dependencies",
+        "Controller unable to clean up resources"
+      ],
+      "learned_confidence": 1.0,
+      "last_adjusted": "2026-03-31T16:08:36.149421",
+      "adjustment_reason": "4 consecutive successes in last 4 runs"
+    },
+    {
+      "type": "rosaroleconfig_stuck_deletion",
+      "pattern": "FAILED - RETRYING.*(?:rosaroleconfig|ROSARoleConfig).*(?:delet|still exists)|FAILED - RETRYING.*(?:delet).*(?:rosaroleconfig|ROSARoleConfig)",
+      "severity": "high",
+      "auto_fix": true,
+      "description": "ROSARoleConfig stuck in deletion state due to finalizers or IAM cleanup",
+      "symptoms": [
+        "ROSARoleConfig has deletionTimestamp but won't delete",
+        "Ansible retrying ROSARoleConfig deletion continuously",
+        "Finalizers preventing resource deletion",
+        "IAM roles still being cleaned up"
+      ],
+      "common_causes": [
+        "Finalizers blocking deletion",
+        "IAM roles still in use",
+        "Controller unable to clean up resources"
+      ]
+    },
+    {
+      "type": "vpc_deletion_failure",
+      "pattern": ".*vpc.*(has dependencies|cannot be deleted|delete.*fail|DELETE_FAILED).*",
+      "severity": "high",
+      "auto_fix": true,
+      "description": "VPC deletion failure due to orphaned dependencies",
+      "symptoms": [
+        "VPC has dependencies and cannot be deleted",
+        "CloudFormation DELETE_FAILED for VPC resource",
+        "Orphaned ENIs or security groups",
+        "ROSANetwork stuck waiting for VPC deletion"
+      ],
+      "common_causes": [
+        "Orphaned ENIs attached to VPC",
+        "Security groups with dependencies",
+        "Resources created outside CloudFormation",
+        "Lambda functions with VPC attachments"
+      ]
+    },
+    {
+      "type": "networking_configuration_error",
+      "pattern": "(?i)(?:subnet|vpc).*(?:invalid|not found|does not exist|no route|unreachable)",
+      "severity": "high",
+      "auto_fix": false,
+      "description": "Network configuration error",
+      "symptoms": [
+        "Invalid subnet configurations",
+        "VPC not found",
+        "Network connectivity issues"
+      ],
+      "common_causes": [
+        "Incorrect VPC ID",
+        "Subnets in wrong AZs",
+        "Missing route tables"
+      ]
+    },
+    {
+      "type": "repeated_timeouts",
+      "pattern": "^(?!.*(?:Pattern matched|Issue detected|RETRYING)).*(?:timed?.out|timeout.*(?:waiting|exceeded|expired)).*",
+      "severity": "medium",
+      "auto_fix": false,
+      "description": "Operation timing out repeatedly",
+      "symptoms": [
+        "Timeout exceeded messages",
+        "Timed out waiting for resource",
+        "Operation timeout expired"
+      ],
+      "common_causes": [
+        "Resource stuck in provisioning",
+        "Infrastructure slowness",
+        "Dependent resource not ready"
+      ]
+    },
+    {
+      "type": "iam_permission_error",
+      "pattern": "(?i)(?:access denied|not authorized|AccessDenied|UnauthorizedAccess|iam.*(?:error|fail|denied))",
+      "severity": "high",
+      "auto_fix": false,
+      "description": "IAM permission or role error",
+      "symptoms": [
+        "Access denied errors",
+        "Missing IAM permissions",
+        "Role assumption failures"
+      ],
+      "common_causes": [
+        "Insufficient AWS permissions",
+        "Missing IAM roles",
+        "Incorrect role trust policies"
+      ]
+    }
+  ]
+}

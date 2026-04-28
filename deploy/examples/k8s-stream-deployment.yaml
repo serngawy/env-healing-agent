@@ -1,0 +1,118 @@
+# KubernetesLogStream — watch live pod logs via the Kubernetes API
+#
+# Scenario: The agent runs as a standalone monitor pod and streams logs
+# from all pods matching a label selector in real time. Authentication
+# uses the mounted service account token automatically (SDK mode) —
+# no kubectl binary or kubeconfig needed.
+#
+# Prerequisites:
+#   oc apply -f ../configmap.yaml   # namespace + knowledge-base ConfigMaps
+#   oc apply -f ../rbac.yaml        # ServiceAccount + ClusterRole (pods/log)
+#
+# Customise:
+#   WATCH_LABEL     — label selector for the pods to watch
+#   WATCH_NAMESPACE — namespace those pods live in
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-v2-k8s-stream
+  namespace: rosa-hcp-agent
+  labels:
+    app: agent-v2-k8s-stream
+    stream-type: kubernetes
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-v2-k8s-stream
+  template:
+    metadata:
+      labels:
+        app: agent-v2-k8s-stream
+    spec:
+      serviceAccountName: agent-v2
+
+      initContainers:
+        - name: merge-knowledge-base
+          image: python:3.11-slim
+          command: ["python", "/scripts/merge_kb.py"]
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            - name: init-script
+              mountPath: /scripts
+            - name: known-issues-1
+              mountPath: /cms/known-issues/1
+            - name: known-issues-2
+              mountPath: /cms/known-issues/2
+            - name: fix-strategies-1
+              mountPath: /cms/fix-strategies/1
+            - name: remediation-outcomes-1
+              mountPath: /cms/remediation-outcomes/1
+
+      containers:
+        - name: agent-v2
+          image: quay.io/melserng/test-assisted-agent:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "agent_v2.cli"]
+          args:
+            - "generic"
+            - "sleep"
+            - "infinity"
+            - "--kb-dir"
+            - "/kb"
+            # Stream logs from all pods with this label in WATCH_NAMESPACE.
+            # SDK mode is auto-detected — KUBERNETES_SERVICE_HOST is always
+            # set inside a pod, so no --k8s-cmd flag is needed.
+            - "--k8s-label"
+            - "$(WATCH_LABEL)"
+            - "--k8s-namespace"
+            - "$(WATCH_NAMESPACE)"
+            - "--verbose"
+          env:
+            - name: WATCH_LABEL
+              value: "app=rosa-hcp-test"
+            - name: WATCH_NAMESPACE
+              value: "default"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-anthropic
+                  key: api-key
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "agent_v2.cli"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+
+      volumes:
+        - name: knowledge-base
+          emptyDir: {}
+        - name: init-script
+          configMap:
+            name: agent-v2-init-script
+        - name: known-issues-1
+          configMap:
+            name: agent-v2-known-issues-1
+        - name: known-issues-2
+          configMap:
+            name: agent-v2-known-issues-2
+        - name: fix-strategies-1
+          configMap:
+            name: agent-v2-fix-strategies-1
+        - name: remediation-outcomes-1
+          configMap:
+            name: agent-v2-remediation-outcomes-1

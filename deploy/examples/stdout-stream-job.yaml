@@ -1,0 +1,164 @@
+# StdoutStream — wrap a subprocess and monitor its live stdout/stderr
+#
+# Scenario: The agent runs an Ansible playbook to completion (or a pytest
+# suite, shell script, or any command) and watches every output line for
+# known issue patterns in real time, applying fixes automatically.
+#
+# This uses a Job (not a Deployment) because ansible-playbook and pytest
+# have a natural end — the Job completes when the wrapped command exits.
+#
+# StdoutStream is implicit: every framework subcommand (ansible, pytest,
+# shell, generic) uses StdoutStream internally for the main subprocess.
+#
+# Prerequisites:
+#   oc apply -f ../configmap.yaml
+#   oc apply -f ../rbac.yaml
+#   oc create secret generic agent-v2-aws-credentials ... -n rosa-hcp-agent
+#   oc create configmap my-playbooks --from-file=path/to/playbooks/ -n rosa-hcp-agent
+#
+# Variants shown below — uncomment the one you need.
+# ---------------------------------------------------------------------------
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agent-v2-ansible-run
+  namespace: rosa-hcp-agent
+  labels:
+    app: agent-v2-stdout
+    stream-type: stdout
+spec:
+  backoffLimit: 0        # do not retry on failure — agent has already attempted fixes
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: agent-v2-stdout
+    spec:
+      serviceAccountName: agent-v2
+      restartPolicy: Never
+
+      initContainers:
+        - name: merge-knowledge-base
+          image: python:3.11-slim
+          command: ["python", "/scripts/merge_kb.py"]
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            - name: init-script
+              mountPath: /scripts
+            - name: known-issues-1
+              mountPath: /cms/known-issues/1
+            - name: known-issues-2
+              mountPath: /cms/known-issues/2
+            - name: fix-strategies-1
+              mountPath: /cms/fix-strategies/1
+            - name: remediation-outcomes-1
+              mountPath: /cms/remediation-outcomes/1
+
+      containers:
+        - name: agent-v2
+          image: quay.io/melserng/test-assisted-agent:latest
+          imagePullPolicy: Always
+
+          # ----------------------------------------------------------------
+          # Variant A — Ansible playbook
+          # ----------------------------------------------------------------
+          command: ["python", "-m", "agent_v2.cli"]
+          args:
+            - "ansible"
+            - "/playbooks/delete-rosa-hcp-cluster.yml"
+            - "-e"
+            - "AWS_REGION=$(AWS_REGION)"
+            - "-e"
+            - "name_prefix=$(NAME_PREFIX)"
+            - "--kb-dir"
+            - "/kb"
+            - "--report"
+            - "--verbose"
+
+          # ----------------------------------------------------------------
+          # Variant B — pytest suite (comment out Variant A and uncomment)
+          # ----------------------------------------------------------------
+          # command: ["python", "-m", "agent_v2.cli"]
+          # args:
+          #   - "pytest"
+          #   - "/tests"
+          #   - "-m"
+          #   - "integration"
+          #   - "--kb-dir"
+          #   - "/kb"
+          #   - "--report"
+          #   - "--verbose"
+
+          # ----------------------------------------------------------------
+          # Variant C — arbitrary shell script (comment out Variant A)
+          # ----------------------------------------------------------------
+          # command: ["python", "-m", "agent_v2.cli"]
+          # args:
+          #   - "shell"
+          #   - "/scripts/run-suite.sh"
+          #   - "--kb-dir"
+          #   - "/kb"
+          #   - "--verbose"
+
+          env:
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: NAME_PREFIX
+              value: "test"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-anthropic
+                  key: api-key
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: region
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: secret-access-key
+
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            # Playbooks supplied via ConfigMap. For real workloads, bake
+            # playbooks into a custom image derived from agent-v2:latest.
+            - name: playbooks
+              mountPath: /playbooks
+
+      volumes:
+        - name: knowledge-base
+          emptyDir: {}
+        - name: init-script
+          configMap:
+            name: agent-v2-init-script
+        - name: known-issues-1
+          configMap:
+            name: agent-v2-known-issues-1
+        - name: known-issues-2
+          configMap:
+            name: agent-v2-known-issues-2
+        - name: fix-strategies-1
+          configMap:
+            name: agent-v2-fix-strategies-1
+        - name: remediation-outcomes-1
+          configMap:
+            name: agent-v2-remediation-outcomes-1
+        # User-supplied playbooks ConfigMap. Create with:
+        #   oc create configmap my-playbooks \
+        #     --from-file=delete-rosa-hcp-cluster.yml=path/to/playbook.yml \
+        #     -n rosa-hcp-agent
+        - name: playbooks
+          configMap:
+            name: my-playbooks

@@ -1,0 +1,141 @@
+# JournaldStream — read systemd journal logs from the host node
+#
+# Scenario: The agent watches kubelet and crio systemd unit logs directly
+# from the host's journal. This is useful for detecting node-level issues
+# (OOM kills, container runtime crashes, network plugin errors) that do
+# not appear in pod stdout logs.
+#
+# How it works inside a pod:
+#   - The host's /var/log/journal directory is mounted read-only via hostPath.
+#   - journalctl reads from that directory (--directory flag) instead of the
+#     local socket, which does not exist inside a container.
+#   - --journald-unit is repeatable: add one per unit to watch.
+#   - --journald-path points at the container-side mount of the host journal.
+#
+# Security notes:
+#   - hostPID: true is required so journalctl can resolve UIDs from the host.
+#   - readOnly: true on the volume mount limits blast radius.
+#   - Depending on the cluster's SCC/AppArmor/SELinux policy you may need to
+#     add a permissive SCC or set securityContext.privileged: true.
+#
+# Prerequisites:
+#   oc apply -f ../configmap.yaml
+#   oc apply -f ../rbac.yaml
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-v2-journald
+  namespace: rosa-hcp-agent
+  labels:
+    app: agent-v2-journald
+    stream-type: journald
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-v2-journald
+  template:
+    metadata:
+      labels:
+        app: agent-v2-journald
+    spec:
+      serviceAccountName: agent-v2
+      # Required so journalctl can resolve user/group names from the host.
+      hostPID: true
+
+      initContainers:
+        - name: merge-knowledge-base
+          image: python:3.11-slim
+          command: ["python", "/scripts/merge_kb.py"]
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            - name: init-script
+              mountPath: /scripts
+            - name: known-issues-1
+              mountPath: /cms/known-issues/1
+            - name: known-issues-2
+              mountPath: /cms/known-issues/2
+            - name: fix-strategies-1
+              mountPath: /cms/fix-strategies/1
+            - name: remediation-outcomes-1
+              mountPath: /cms/remediation-outcomes/1
+
+      containers:
+        - name: agent-v2
+          image: quay.io/melserng/test-assisted-agent:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "agent_v2.cli"]
+          args:
+            - "generic"
+            - "sleep"
+            - "infinity"
+            - "--kb-dir"
+            - "/kb"
+            # --journald-unit is repeatable — one JournaldStream per unit.
+            # All streams share the same --journald-path.
+            - "--journald-unit"
+            - "kubelet"
+            - "--journald-unit"
+            - "crio"
+            - "--journald-path"
+            - "/host/var/log/journal"   # container-side mount of the host journal
+            - "--verbose"
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-anthropic
+                  key: api-key
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            # Read-only mount of the host systemd journal directory.
+            - name: host-journal
+              mountPath: /host/var/log/journal
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "agent_v2.cli"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          # Adjust if the cluster SCC requires it
+          # securityContext:
+          #   privileged: true
+
+      volumes:
+        - name: knowledge-base
+          emptyDir: {}
+        - name: init-script
+          configMap:
+            name: agent-v2-init-script
+        - name: known-issues-1
+          configMap:
+            name: agent-v2-known-issues-1
+        - name: known-issues-2
+          configMap:
+            name: agent-v2-known-issues-2
+        - name: fix-strategies-1
+          configMap:
+            name: agent-v2-fix-strategies-1
+        - name: remediation-outcomes-1
+          configMap:
+            name: agent-v2-remediation-outcomes-1
+        # Mount the host systemd journal read-only.
+        # /run/log/journal is the volatile (RAM) journal; prefer /var/log/journal
+        # for persistent storage, which is available when Storage=persistent is
+        # set in /etc/systemd/journald.conf on the host.
+        - name: host-journal
+          hostPath:
+            path: /var/log/journal
+            type: DirectoryOrCreate

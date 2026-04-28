@@ -1,0 +1,141 @@
+# PipeStream — read log lines fed into stdin from a sidecar process
+#
+# Scenario: A test-runner sidecar writes its output to a named pipe (FIFO)
+# in a shared emptyDir volume. The agent-v2 container reads from that FIFO
+# via stdin (pipe subcommand). Both containers start together; the agent
+# monitors every line the runner produces, in real time.
+#
+# Why a named pipe?
+#   A FIFO blocks the writer until the reader is open, which naturally
+#   synchronises startup. emptyDir is backed by tmpfs on most clusters,
+#   so the pipe lives entirely in memory.
+#
+# Replacing the test-runner image:
+#   Swap `my-test-runner:latest` for your own image and update the command.
+#   The only contract is that it writes to /shared/output.fifo.
+#
+# Prerequisites:
+#   oc apply -f ../configmap.yaml
+#   oc apply -f ../rbac.yaml
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-v2-pipe
+  namespace: rosa-hcp-agent
+  labels:
+    app: agent-v2-pipe
+    stream-type: pipe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-v2-pipe
+  template:
+    metadata:
+      labels:
+        app: agent-v2-pipe
+    spec:
+      serviceAccountName: agent-v2
+
+      # Create the FIFO before either container starts so both can open it.
+      initContainers:
+        - name: merge-knowledge-base
+          image: python:3.11-slim
+          command: ["python", "/scripts/merge_kb.py"]
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            - name: init-script
+              mountPath: /scripts
+            - name: known-issues-1
+              mountPath: /cms/known-issues/1
+            - name: known-issues-2
+              mountPath: /cms/known-issues/2
+            - name: fix-strategies-1
+              mountPath: /cms/fix-strategies/1
+            - name: remediation-outcomes-1
+              mountPath: /cms/remediation-outcomes/1
+
+        - name: create-fifo
+          image: busybox:latest
+          command: ["mkfifo", "/shared/output.fifo"]
+          volumeMounts:
+            - name: shared-pipe
+              mountPath: /shared
+
+      containers:
+        # ----------------------------------------------------------------
+        # Sidecar: test runner — writes all output to the shared FIFO.
+        # Replace this image and command with your actual test runner.
+        # ----------------------------------------------------------------
+        - name: test-runner
+          image: my-test-runner:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - "my-test-suite --output-format plain > /shared/output.fifo 2>&1"
+          volumeMounts:
+            - name: shared-pipe
+              mountPath: /shared
+
+        # ----------------------------------------------------------------
+        # Agent: reads from the FIFO via stdin (pipe subcommand).
+        # ----------------------------------------------------------------
+        - name: agent-v2
+          image: quay.io/melserng/test-assisted-agent:latest
+          imagePullPolicy: Always
+          # The shell redirect feeds the FIFO into the agent's stdin.
+          command: ["/bin/sh", "-c"]
+          args:
+            - >
+              python -m agent_v2.cli pipe
+              --kb-dir /kb
+              --verbose
+              --report
+              < /shared/output.fifo
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-anthropic
+                  key: api-key
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            - name: shared-pipe
+              mountPath: /shared
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "agent_v2.cli"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+      volumes:
+        - name: knowledge-base
+          emptyDir: {}
+        - name: shared-pipe
+          emptyDir: {}         # tmpfs — FIFO lives in memory, no disk I/O
+        - name: init-script
+          configMap:
+            name: agent-v2-init-script
+        - name: known-issues-1
+          configMap:
+            name: agent-v2-known-issues-1
+        - name: known-issues-2
+          configMap:
+            name: agent-v2-known-issues-2
+        - name: fix-strategies-1
+          configMap:
+            name: agent-v2-fix-strategies-1
+        - name: remediation-outcomes-1
+          configMap:
+            name: agent-v2-remediation-outcomes-1

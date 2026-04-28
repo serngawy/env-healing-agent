@@ -1,0 +1,120 @@
+# FileTailStream — tail log files written to the host filesystem
+#
+# Scenario: An application on the node writes logs to /var/log/my-app/.
+# The agent mounts that directory read-only via a hostPath volume and tails
+# one or more files. --tail-file is repeatable — add it for each file.
+#
+# Prerequisites:
+#   oc apply -f ../configmap.yaml
+#   oc apply -f ../rbac.yaml
+#
+# Customise:
+#   hostPath.path       — directory on the host node containing log files
+#   --tail-file args    — paths inside the container to tail (one per file)
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-v2-file-tail
+  namespace: rosa-hcp-agent
+  labels:
+    app: agent-v2-file-tail
+    stream-type: file-tail
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-v2-file-tail
+  template:
+    metadata:
+      labels:
+        app: agent-v2-file-tail
+    spec:
+      serviceAccountName: agent-v2
+
+      initContainers:
+        - name: merge-knowledge-base
+          image: python:3.11-slim
+          command: ["python", "/scripts/merge_kb.py"]
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            - name: init-script
+              mountPath: /scripts
+            - name: known-issues-1
+              mountPath: /cms/known-issues/1
+            - name: known-issues-2
+              mountPath: /cms/known-issues/2
+            - name: fix-strategies-1
+              mountPath: /cms/fix-strategies/1
+            - name: remediation-outcomes-1
+              mountPath: /cms/remediation-outcomes/1
+
+      containers:
+        - name: agent-v2
+          image: quay.io/melserng/test-assisted-agent:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "agent_v2.cli"]
+          args:
+            - "generic"
+            - "sleep"
+            - "infinity"
+            - "--kb-dir"
+            - "/kb"
+            # Tail the main log file. Repeat --tail-file for additional files.
+            - "--tail-file"
+            - "/host/logs/app.log"
+            - "--tail-file"
+            - "/host/logs/error.log"
+            - "--verbose"
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-anthropic
+                  key: api-key
+          volumeMounts:
+            - name: knowledge-base
+              mountPath: /kb
+            # Host log directory mounted read-only inside the container.
+            - name: host-logs
+              mountPath: /host/logs
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "agent_v2.cli"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+
+      volumes:
+        - name: knowledge-base
+          emptyDir: {}
+        - name: init-script
+          configMap:
+            name: agent-v2-init-script
+        - name: known-issues-1
+          configMap:
+            name: agent-v2-known-issues-1
+        - name: known-issues-2
+          configMap:
+            name: agent-v2-known-issues-2
+        - name: fix-strategies-1
+          configMap:
+            name: agent-v2-fix-strategies-1
+        - name: remediation-outcomes-1
+          configMap:
+            name: agent-v2-remediation-outcomes-1
+        # Mount the host log directory. Change path to your actual log location.
+        - name: host-logs
+          hostPath:
+            path: /var/log/my-app
+            type: DirectoryOrCreate

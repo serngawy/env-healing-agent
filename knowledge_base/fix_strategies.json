@@ -1,0 +1,271 @@
+{
+  "version": "2.1.0",
+  "description": "Machine-executable fix strategies for the remediation agent. Each entry defines action_type and action config. The agent reads and executes these directly — no Python fix logic lives outside this file.",
+  "action_types": {
+    "advisory":      "Log a message and return a configurable success value. Never blocks.",
+    "cli_command":   "Run a single CLI command. Args are a JSON list with {param} placeholders.",
+    "cli_sequence":  "Run ordered steps. Each step is type 'command' (list) or 'shell' (script string/array joined with newline and run via sh -c).",
+    "kubectl_patch": "Run oc/kubectl patch. Patch body and type are defined in the action object."
+  },
+  "fix_strategies": {
+
+    "backoff_and_retry": {
+      "name": "Backoff and Retry",
+      "description": "Advisory: log recommended wait time for rate-limited operations. Non-blocking.",
+      "automated": true,
+      "action_type": "advisory",
+      "parameters": ["backoff_seconds", "max_retries"],
+      "action": {
+        "message": "Rate limit detected: wait {backoff_seconds}s before retrying (max {max_retries} retries)",
+        "success": true
+      }
+    },
+
+    "refresh_ocm_token": {
+      "name": "Refresh OCM Token",
+      "description": "Advisory: OCM credentials need manual refresh — cannot be automated.",
+      "automated": false,
+      "action_type": "advisory",
+      "parameters": [],
+      "action": {
+        "message": "OCM token refresh requires manual intervention — update credentials and retry",
+        "success": false
+      }
+    },
+
+    "log_and_continue": {
+      "name": "Log and Continue",
+      "description": "Log the issue for review and continue test execution.",
+      "automated": true,
+      "action_type": "advisory",
+      "parameters": [],
+      "action": {
+        "message": "Issue logged for review — test execution continues",
+        "success": true
+      }
+    },
+
+    "manual_cloudformation_cleanup": {
+      "name": "Manual CloudFormation Cleanup",
+      "description": "Advisory: flag a CloudFormation stack for operator review.",
+      "automated": false,
+      "action_type": "advisory",
+      "parameters": ["message"],
+      "action": {
+        "message": "MANUAL INTERVENTION REQUIRED: {message}",
+        "success": true
+      }
+    },
+
+    "increase_timeout_and_monitor": {
+      "name": "Increase Timeout and Monitor",
+      "description": "Advisory: recommend increasing timeout for slow operations.",
+      "automated": false,
+      "action_type": "advisory",
+      "parameters": ["suggested_timeout_increase"],
+      "action": {
+        "message": "Recommend increasing timeout by {suggested_timeout_increase} for this operation",
+        "success": true
+      }
+    },
+
+    "install_capi_capa": {
+      "name": "Verify CAPI/CAPA Installation",
+      "description": "Check that CAPI and CAPA controller deployments exist in their namespaces.",
+      "automated": false,
+      "action_type": "cli_sequence",
+      "parameters": [],
+      "action": {
+        "steps": [
+          {
+            "name": "check_capi",
+            "type": "command",
+            "command": ["oc", "get", "deployment", "capi-controller-manager", "-n", "capi-system"],
+            "timeout": 10,
+            "optional": true
+          },
+          {
+            "name": "check_capa",
+            "type": "command",
+            "command": ["oc", "get", "deployment", "capa-controller-manager", "-n", "capa-system"],
+            "timeout": 10,
+            "optional": true
+          }
+        ],
+        "success_message": "CAPI/CAPA controllers verified — both namespaces reachable",
+        "failure_message": "CAPI/CAPA not installed — run suite 10-configure-mce-environment"
+      }
+    },
+
+    "retry_cloudformation_delete": {
+      "name": "Retry CloudFormation Stack Deletion",
+      "description": "Clean up VPC blocking dependencies (endpoints, ENIs, security groups) then retry stack deletion.",
+      "automated": true,
+      "action_type": "cli_sequence",
+      "parameters": ["stack_name", "region"],
+      "action": {
+        "steps": [
+          {
+            "name": "verify_stack_state",
+            "type": "shell",
+            "shell": [
+              "STATUS=$(aws cloudformation describe-stacks --stack-name {stack_name} --region {region} --query 'Stacks[0].StackStatus' --output text 2>&1)",
+              "RC=$?",
+              "if [ $RC -ne 0 ]; then",
+              "  echo \"$STATUS\" | grep -qi 'does not exist' && echo 'Stack {stack_name} already deleted' && exit 0",
+              "  echo \"Error checking stack: $STATUS\" && exit 1",
+              "fi",
+              "echo \"Stack {stack_name} status: $STATUS\"",
+              "case \"$STATUS\" in",
+              "  DELETE_FAILED|DELETE_IN_PROGRESS) echo 'Proceeding with VPC cleanup' ;;",
+              "  *) echo \"Unexpected state: $STATUS\" && exit 1 ;;",
+              "esac"
+            ],
+            "timeout": 15,
+            "optional": false
+          },
+          {
+            "name": "delete_vpc_endpoints",
+            "type": "shell",
+            "shell": [
+              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name {stack_name} --region {region} --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
+              "echo \"VPC: ${VPC_ID:-none}\"",
+              "[ -z \"$VPC_ID\" ] || ! echo \"$VPC_ID\" | grep -q '^vpc-' && echo 'No VPC found in stack' && exit 0",
+              "VPCE_IDS=$(aws ec2 describe-vpc-endpoints --region {region} --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'VpcEndpoints[*].VpcEndpointId' --output text 2>/dev/null)",
+              "if [ -n \"$VPCE_IDS\" ]; then",
+              "  echo \"Deleting VPC endpoints: $VPCE_IDS\"",
+              "  aws ec2 delete-vpc-endpoints --region {region} --vpc-endpoint-ids $VPCE_IDS",
+              "  echo 'Waiting 20s for ENIs to release after endpoint deletion'",
+              "  sleep 20",
+              "else",
+              "  echo 'No VPC endpoints found'",
+              "fi"
+            ],
+            "timeout": 90,
+            "optional": true
+          },
+          {
+            "name": "delete_enis",
+            "type": "shell",
+            "shell": [
+              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name {stack_name} --region {region} --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
+              "[ -z \"$VPC_ID\" ] || ! echo \"$VPC_ID\" | grep -q '^vpc-' && echo 'No VPC found, skipping ENI cleanup' && exit 0",
+              "echo \"Cleaning ENIs in VPC $VPC_ID\"",
+              "ENI_IDS=$(aws ec2 describe-network-interfaces --region {region} --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text 2>/dev/null)",
+              "for ENI_ID in $ENI_IDS; do",
+              "  ATTACH_ID=$(aws ec2 describe-network-interfaces --region {region} --network-interface-ids \"$ENI_ID\" --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null)",
+              "  if [ -n \"$ATTACH_ID\" ] && [ \"$ATTACH_ID\" != 'None' ] && [ \"$ATTACH_ID\" != 'null' ]; then",
+              "    echo \"Detaching $ENI_ID (attachment $ATTACH_ID)\"",
+              "    aws ec2 detach-network-interface --region {region} --attachment-id \"$ATTACH_ID\" --force 2>/dev/null",
+              "    sleep 2",
+              "  fi",
+              "  aws ec2 delete-network-interface --region {region} --network-interface-id \"$ENI_ID\" && echo \"Deleted ENI $ENI_ID\" || echo \"Could not delete ENI $ENI_ID\"",
+              "done",
+              "echo 'ENI cleanup complete'"
+            ],
+            "timeout": 180,
+            "optional": true
+          },
+          {
+            "name": "delete_security_groups",
+            "type": "shell",
+            "shell": [
+              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name {stack_name} --region {region} --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
+              "[ -z \"$VPC_ID\" ] || ! echo \"$VPC_ID\" | grep -q '^vpc-' && echo 'No VPC found, skipping SG cleanup' && exit 0",
+              "echo \"Cleaning non-default security groups in VPC $VPC_ID\"",
+              "SG_IDS=$(aws ec2 describe-security-groups --region {region} --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null)",
+              "for SG_ID in $SG_IDS; do",
+              "  aws ec2 delete-security-group --region {region} --group-id \"$SG_ID\" && echo \"Deleted SG $SG_ID\" || echo \"Could not delete SG $SG_ID (may have dependencies)\"",
+              "done",
+              "echo 'Security group cleanup complete'"
+            ],
+            "timeout": 60,
+            "optional": true
+          },
+          {
+            "name": "retry_stack_deletion",
+            "type": "shell",
+            "shell": [
+              "STATUS=$(aws cloudformation describe-stacks --stack-name {stack_name} --region {region} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo 'GONE')",
+              "echo \"Current stack status: $STATUS\"",
+              "if [ \"$STATUS\" = 'DELETE_FAILED' ]; then",
+              "  echo 'Retrying CloudFormation deletion for {stack_name}'",
+              "  aws cloudformation delete-stack --stack-name {stack_name} --region {region}",
+              "  sleep 5",
+              "  NEW_STATUS=$(aws cloudformation describe-stacks --stack-name {stack_name} --region {region} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo 'GONE')",
+              "  echo \"Status after retry: $NEW_STATUS\"",
+              "  [ \"$NEW_STATUS\" = 'DELETE_FAILED' ] && echo 'Stack re-entered DELETE_FAILED -- dependencies may remain' && exit 1",
+              "elif [ \"$STATUS\" = 'DELETE_IN_PROGRESS' ]; then",
+              "  echo 'Stack {stack_name} is DELETE_IN_PROGRESS -- VPC cleanup should unblock it'",
+              "elif [ \"$STATUS\" = 'GONE' ]; then",
+              "  echo 'Stack {stack_name} already deleted'",
+              "fi",
+              "echo 'Retry sequence complete'"
+            ],
+            "timeout": 30,
+            "optional": false
+          }
+        ],
+        "success_message": "CloudFormation stack {stack_name} cleanup and retry complete",
+        "failure_message": "Failed to clean up or retry CloudFormation stack {stack_name}"
+      }
+    },
+
+    "cleanup_vpc_dependencies": {
+      "name": "Clean Up VPC Dependencies",
+      "description": "Remove ENIs and security groups tagged with the cluster ID that are blocking VPC deletion.",
+      "automated": true,
+      "action_type": "cli_sequence",
+      "parameters": ["vpc_id", "cluster_id", "region"],
+      "action": {
+        "steps": [
+          {
+            "name": "delete_tagged_enis",
+            "type": "shell",
+            "shell": [
+              "REGION={region}",
+              "VPC_ID={vpc_id}",
+              "CLUSTER_ID={cluster_id}",
+              "echo \"Cleaning tagged ENIs in VPC $VPC_ID for cluster $CLUSTER_ID\"",
+              "ENI_IDS=$(aws ec2 describe-network-interfaces --region $REGION --filters 'Name=vpc-id,Values='\"$VPC_ID\" 'Name=tag:cluster.x-k8s.io/cluster-name,Values='\"$CLUSTER_ID\" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text 2>/dev/null)",
+              "if [ -z \"$ENI_IDS\" ]; then echo 'No tagged ENIs found' && exit 0; fi",
+              "for ENI_ID in $ENI_IDS; do",
+              "  ATTACH_ID=$(aws ec2 describe-network-interfaces --region $REGION --network-interface-ids \"$ENI_ID\" --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null)",
+              "  if [ -n \"$ATTACH_ID\" ] && [ \"$ATTACH_ID\" != 'None' ] && [ \"$ATTACH_ID\" != 'null' ]; then",
+              "    echo \"Detaching ENI $ENI_ID (attachment $ATTACH_ID)\"",
+              "    aws ec2 detach-network-interface --region $REGION --attachment-id \"$ATTACH_ID\" --force 2>/dev/null",
+              "    sleep 2",
+              "  fi",
+              "  aws ec2 delete-network-interface --region $REGION --network-interface-id \"$ENI_ID\" && echo \"Deleted ENI $ENI_ID\" || echo \"Could not delete ENI $ENI_ID\"",
+              "done",
+              "echo 'ENI cleanup done'"
+            ],
+            "timeout": 120,
+            "optional": false
+          },
+          {
+            "name": "delete_tagged_security_groups",
+            "type": "shell",
+            "shell": [
+              "REGION={region}",
+              "VPC_ID={vpc_id}",
+              "CLUSTER_ID={cluster_id}",
+              "echo \"Cleaning tagged security groups in VPC $VPC_ID for cluster $CLUSTER_ID\"",
+              "SG_IDS=$(aws ec2 describe-security-groups --region $REGION --filters 'Name=vpc-id,Values='\"$VPC_ID\" 'Name=tag:red-hat-clustertype,Values='\"$CLUSTER_ID\" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null)",
+              "if [ -z \"$SG_IDS\" ]; then echo 'No tagged security groups found' && exit 0; fi",
+              "for SG_ID in $SG_IDS; do",
+              "  aws ec2 delete-security-group --region $REGION --group-id \"$SG_ID\" && echo \"Deleted SG $SG_ID\" || echo \"Could not delete SG $SG_ID (may have remaining dependencies)\"",
+              "done",
+              "echo \"Security group cleanup done for VPC $VPC_ID\""
+            ],
+            "timeout": 60,
+            "optional": true
+          }
+        ],
+        "success_message": "VPC {vpc_id} dependency cleanup complete",
+        "failure_message": "Failed to clean up VPC {vpc_id} dependencies"
+      }
+    }
+
+  }
+}

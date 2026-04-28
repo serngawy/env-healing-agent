@@ -1,0 +1,200 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-v2
+  namespace: rosa-hcp-agent
+  labels:
+    app: agent-v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-v2
+  template:
+    metadata:
+      labels:
+        app: agent-v2
+    spec:
+      serviceAccountName: agent-v2
+
+      # -----------------------------------------------------------------------
+      # Init container: merge all ConfigMap chunks into a single emptyDir.
+      #
+      # To add a new chunk for any JSON file:
+      #   1. Create the new ConfigMap (e.g. agent-v2-known-issues-3).
+      #   2. Add a volume below referencing it.
+      #   3. Add a volumeMount to this init container at the next numbered path
+      #      (e.g. /cms/known-issues/3).
+      #   Re-apply — no changes to the merge script needed.
+      # -----------------------------------------------------------------------
+      initContainers:
+        - name: merge-knowledge-base
+          image: python:3.11-slim
+          command: ["python", "/scripts/merge_kb.py"]
+          volumeMounts:
+            # Output — shared with the main container
+            - name: knowledge-base
+              mountPath: /kb
+            # Merge script
+            - name: init-script
+              mountPath: /scripts
+            # known_issues chunks
+            - name: known-issues-1
+              mountPath: /cms/known-issues/1
+            - name: known-issues-2
+              mountPath: /cms/known-issues/2
+            # fix_strategies chunks
+            - name: fix-strategies-1
+              mountPath: /cms/fix-strategies/1
+            # remediation_outcomes chunks
+            - name: remediation-outcomes-1
+              mountPath: /cms/remediation-outcomes/1
+
+      # -----------------------------------------------------------------------
+      # Main container
+      # -----------------------------------------------------------------------
+      containers:
+        - name: agent-v2
+          # Build: docker build -t agent-v2:latest agent-v2/
+          # Push to your registry then update this field.
+          image: quay.io/melserng/test-assisted-agent:latest
+          imagePullPolicy: Always
+
+          # Run in generic mode with a no-op main process.
+          # The agent monitors Kubernetes pod logs via --k8s-label.
+          # Override WATCH_LABEL / WATCH_NAMESPACE to target your test pods.
+          command: ["python", "-m", "agent_v2.cli"]
+          args:
+            - "generic"
+            - "sleep"
+            - "infinity"
+            - "--kb-dir"
+            - "/kb"
+            - "--k8s-label"
+            - "$(WATCH_LABEL)"
+            - "--k8s-namespace"
+            - "$(WATCH_NAMESPACE)"
+            - "--verbose"
+
+          env:
+            - name: WATCH_LABEL
+              value: "app=rosa-hcp-test"
+            - name: WATCH_NAMESPACE
+              value: "default"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-anthropic
+                  key: api-key
+            # AWS credentials for fix strategies (retry_cloudformation_delete, cleanup_vpc_dependencies)
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: region
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-v2-aws-credentials
+                  key: secret-access-key
+
+          volumeMounts:
+            # Merged knowledge base written by the init container
+            - name: knowledge-base
+              mountPath: /kb
+            # Uncomment to enable FileTailStream on a host log directory
+            # - name: host-test-logs
+            #   mountPath: /host/var/log/my-test-runner
+            #   readOnly: true
+            # Uncomment to enable JournaldStream (pass journal_path to the stream)
+            # - name: host-journal
+            #   mountPath: /host/var/log/journal
+            #   readOnly: true
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "agent_v2.cli"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import agent_v2"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+
+      # -----------------------------------------------------------------------
+      # Volumes
+      # -----------------------------------------------------------------------
+      volumes:
+        # emptyDir shared between init container (writer) and main container (reader)
+        - name: knowledge-base
+          emptyDir: {}
+
+        # Merge script
+        - name: init-script
+          configMap:
+            name: agent-v2-init-script
+
+        # known_issues chunks — add more here as the file grows
+        - name: known-issues-1
+          configMap:
+            name: agent-v2-known-issues-1
+        - name: known-issues-2
+          configMap:
+            name: agent-v2-known-issues-2
+
+        # fix_strategies chunks
+        - name: fix-strategies-1
+          configMap:
+            name: agent-v2-fix-strategies-1
+
+        # remediation_outcomes chunks
+        - name: remediation-outcomes-1
+          configMap:
+            name: agent-v2-remediation-outcomes-1
+
+        # -----------------------------------------------------------------------
+        # Optional: FileTailStream — mount a host log file or emptyDir log path.
+        # Add a volumeMount to the main container at the same mountPath and pass
+        # --tail-file <mountPath>/<filename> in the args.
+        # -----------------------------------------------------------------------
+        # - name: host-test-logs
+        #   hostPath:
+        #     path: /var/log/my-test-runner
+        #     type: DirectoryOrCreate
+
+        # -----------------------------------------------------------------------
+        # Optional: JournaldStream — mount the host systemd journal so
+        # journalctl --directory can read it from inside the pod.
+        # Then pass journal_path="/host/var/log/journal" when constructing
+        # JournaldStream, or add --journald-unit to the CLI args.
+        #
+        # Also requires hostPID: true and may need a permissive SCC/AppArmor
+        # profile depending on your cluster's security policy.
+        # -----------------------------------------------------------------------
+        # - name: host-journal
+        #   hostPath:
+        #     path: /var/log/journal
+        #     type: DirectoryOrCreate
+
+      # Uncomment if using JournaldStream (needed to read host journal socket)
+      # hostPID: true
+
+      restartPolicy: Always
