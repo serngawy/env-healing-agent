@@ -485,7 +485,7 @@ Two paths — Claude AI (primary) and built-in methods (fallback).
 
 #### Claude AI path (primary)
 
-When `ANTHROPIC_API_KEY` is set, the agent filters the captured log buffer to **error and failure lines only**, includes 10 lines of context before and after each, and sends the result to Claude along with:
+When `ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` are set, the agent filters the captured log buffer to **error and failure lines only**, includes 10 lines of context before and after each, and sends the result to Claude along with:
 
 - The detected issue type
 - Existing patterns from `known_issues.json` (for deduplication)
@@ -505,7 +505,7 @@ Error/failure log windows (±10 lines context each)
 
 #### Built-in fallback
 
-Used when `ANTHROPIC_API_KEY` is absent or the `anthropic` package is not installed:
+Used when `ANTHROPIC_VERTEX_PROJECT_ID` / `CLOUD_ML_REGION` are absent or the `anthropic` package is not installed:
 
 | Issue type | Approach |
 |---|---|
@@ -522,14 +522,17 @@ Used when `ANTHROPIC_API_KEY` is absent or the `anthropic` package is not instal
 #### Enabling Claude
 
 ```bash
-# Standalone
-export ANTHROPIC_API_KEY=<your-key>
+# Standalone — Google Cloud ADC handles authentication automatically
+export ANTHROPIC_VERTEX_PROJECT_ID=my-gcp-project
+export CLOUD_ML_REGION=us-east5
 python -m env_healing_agent.cli ansible playbooks/provision.yml
 
 # Kubernetes — create the Secret then deploy
-oc create secret generic env-healing-agent-anthropic \
-  --from-literal=api-key=<your-key> -n env-healing-agent
-# or use: ANTHROPIC_API_KEY=<your-key> make deploy
+oc create secret generic env-healing-agent-vertex \
+  --from-literal=project-id=my-gcp-project \
+  --from-literal=region=us-east5 \
+  -n env-healing-agent
+# or use: ANTHROPIC_VERTEX_PROJECT_ID=my-gcp-project CLOUD_ML_REGION=us-east5 make deploy
 ```
 
 ### Remediation Agent
@@ -600,9 +603,11 @@ make push IMAGE_REGISTRY=quay.io/myorg IMAGE_NAME=env-healing-agent IMAGE_TAG=v1
 ### Apply order
 
 ```bash
-# 1. Claude AI credentials
-oc create secret generic env-healing-agent-anthropic \
-  --from-literal=api-key=<KEY> -n env-healing-agent
+# 1. Claude AI credentials (Vertex AI — no API key needed, uses GCP ADC)
+oc create secret generic env-healing-agent-vertex \
+  --from-literal=project-id=<GCP_PROJECT_ID> \
+  --from-literal=region=<GCP_REGION> \
+  -n env-healing-agent
 
 # 2. AWS credentials (for remediation fix strategies)
 oc create secret generic env-healing-agent-aws-credentials \
@@ -611,7 +616,7 @@ oc create secret generic env-healing-agent-aws-credentials \
   --from-literal=region=us-east-1 \
   -n env-healing-agent
 
-# 3. Base manifests — or use: ANTHROPIC_API_KEY=<key> make deploy
+# 3. Base manifests — or use: ANTHROPIC_VERTEX_PROJECT_ID=<project> CLOUD_ML_REGION=<region> make deploy
 oc apply -f deploy/configmap.yaml
 oc apply -f deploy/rbac.yaml
 oc apply -f deploy/deployment.yaml

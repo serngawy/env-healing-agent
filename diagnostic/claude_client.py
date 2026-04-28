@@ -2,20 +2,24 @@
 Claude Diagnostic Client
 ========================
 
-Sends a chunk of log lines to the Anthropic API and returns:
+Sends a chunk of log lines to Claude via Google Cloud Vertex AI and returns:
   - A structured diagnosis for the detected issue
   - Any new issue patterns Claude identifies that are absent from known_issues.json
 
-Authentication: reads ANTHROPIC_API_KEY from the environment (standard SDK behaviour).
+Authentication: uses Google Cloud Application Default Credentials (ADC).
+Required environment variables:
+  ANTHROPIC_VERTEX_PROJECT_ID  — GCP project that has Vertex AI / Claude enabled
+  CLOUD_ML_REGION              — GCP region (e.g. us-east5)
 """
 
 import json
+import os
 import re
 from typing import Dict, List, Optional, Tuple
 
 # Deferred import — the caller checks for ImportError so the rest of the
 # package still loads even if the `anthropic` package is not installed.
-import anthropic
+from anthropic import AnthropicVertex
 
 _SYSTEM_PROMPT = """\
 You are an expert SRE diagnostic agent specialising in OpenShift, Kubernetes, \
@@ -122,10 +126,12 @@ def _extract_error_windows(lines: List[str], context: int = _CONTEXT_LINES) -> s
 
 
 class ClaudeClient:
-    """Thin wrapper around anthropic.Anthropic for diagnostic use."""
+    """Thin wrapper around AnthropicVertex for diagnostic use."""
 
     def __init__(self, model: str = "claude-sonnet-4-6"):
-        self._client = anthropic.Anthropic()
+        project_id = os.environ["ANTHROPIC_VERTEX_PROJECT_ID"]
+        region = os.environ["CLOUD_ML_REGION"]
+        self._client = AnthropicVertex(project_id=project_id, region=region)
         self._model = model
 
     def diagnose(

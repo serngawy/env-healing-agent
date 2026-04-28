@@ -108,11 +108,16 @@ spec:
               value: "test"
             - name: PYTHONUNBUFFERED
               value: "1"
-            - name: ANTHROPIC_API_KEY
+            - name: ANTHROPIC_VERTEX_PROJECT_ID
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-anthropic
-                  key: api-key
+                  name: env-healing-agent-vertex
+                  key: project-id
+            - name: CLOUD_ML_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: env-healing-agent-vertex
+                  key: region
             - name: AWS_DEFAULT_REGION
               valueFrom:
                 secretKeyRef:

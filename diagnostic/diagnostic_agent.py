@@ -11,12 +11,14 @@ Primary path — Claude AI:
   benefit from them automatically.
 
 Fallback — built-in methods:
-  When ANTHROPIC_API_KEY is absent or the `anthropic` package is not installed,
-  the agent falls back to the hardcoded diagnosis methods ported from v1.
+  When ANTHROPIC_VERTEX_PROJECT_ID / CLOUD_ML_REGION are absent or the
+  `anthropic` package is not installed, the agent falls back to the hardcoded
+  diagnosis methods.
 
 Enabling Claude:
-  Set ANTHROPIC_API_KEY in the environment (or in the Kubernetes Secret) before
-  starting the agent. No other configuration is required.
+  Set ANTHROPIC_VERTEX_PROJECT_ID and CLOUD_ML_REGION in the environment (or
+  in the Kubernetes Secret) and ensure Google Cloud ADC is configured.
+  No API key is required — authentication is handled by ADC.
 """
 
 import json
@@ -42,13 +44,22 @@ class DiagnosticAgent(BaseAgent):
 
     def _init_claude(self):
         """Try to create a ClaudeClient; return None when unavailable."""
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            self.log("ANTHROPIC_API_KEY not set — using built-in diagnosis methods", "info")
+        project_id = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
+        region = os.environ.get("CLOUD_ML_REGION")
+        if not project_id or not region:
+            self.log(
+                "ANTHROPIC_VERTEX_PROJECT_ID or CLOUD_ML_REGION not set "
+                "— using built-in diagnosis methods",
+                "info",
+            )
             return None
         try:
             from .claude_client import ClaudeClient
             client = ClaudeClient()
-            self.log("Claude diagnostic client ready", "info")
+            self.log(
+                f"Claude diagnostic client ready (project={project_id}, region={region})",
+                "info",
+            )
             return client
         except ImportError:
             self.log(
