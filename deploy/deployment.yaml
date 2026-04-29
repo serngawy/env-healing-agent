@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: env-healing-agent
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent
 spec:
@@ -57,7 +57,7 @@ spec:
         - name: env-healing-agent
           # Build: docker build -t env-healing-agent:latest env-healing-agent/
           # Push to your registry then update this field.
-          image: quay.io/melserng/test-assisted-agent:latest
+          image: quay.io/melserng/env-healing-agent:latest
           imagePullPolicy: Always
 
           # Run in generic mode with a no-op main process.
@@ -78,7 +78,7 @@ spec:
 
           env:
             - name: WATCH_LABEL
-              value: "app=rosa-hcp-test"
+              value: "app=test-env"
             - name: WATCH_NAMESPACE
               value: "default"
             - name: PYTHONUNBUFFERED

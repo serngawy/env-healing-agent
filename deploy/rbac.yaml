@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: env-healing-agent
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent
 ---
@@ -46,4 +46,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: env-healing-agent
-    namespace: rosa-hcp-agent
+    namespace: env-healing-agent-ns

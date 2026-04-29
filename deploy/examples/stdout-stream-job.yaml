@@ -13,8 +13,8 @@
 # Prerequisites:
 #   oc apply -f ../configmap.yaml
 #   oc apply -f ../rbac.yaml
-#   oc create secret generic env-healing-agent-aws-credentials ... -n rosa-hcp-agent
-#   oc create configmap my-playbooks --from-file=path/to/playbooks/ -n rosa-hcp-agent
+#   oc create secret generic env-healing-agent-aws-credentials ... -n env-healing-agent-ns
+#   oc create configmap my-playbooks --from-file=path/to/playbooks/ -n env-healing-agent-ns
 #
 # Variants shown below — uncomment the one you need.
 # ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: env-healing-agent-ansible-run
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent-stdout
     stream-type: stdout
@@ -57,7 +57,7 @@ spec:
 
       containers:
         - name: env-healing-agent
-          image: quay.io/melserng/test-assisted-agent:latest
+          image: quay.io/melserng/env-healing-agent:latest
           imagePullPolicy: Always
 
           # ----------------------------------------------------------------
@@ -163,7 +163,7 @@ spec:
         # User-supplied playbooks ConfigMap. Create with:
         #   oc create configmap my-playbooks \
         #     --from-file=delete-rosa-hcp-cluster.yml=path/to/playbook.yml \
-        #     -n rosa-hcp-agent
+        #     -n env-healing-agent-ns
         - name: playbooks
           configMap:
             name: my-playbooks

@@ -37,10 +37,11 @@ image-push: push
 deploy:
 	@test -n "$(ANTHROPIC_VERTEX_PROJECT_ID)" || (echo "ERROR: ANTHROPIC_VERTEX_PROJECT_ID is not set" && exit 1)
 	@test -n "$(CLOUD_ML_REGION)"             || (echo "ERROR: CLOUD_ML_REGION is not set" && exit 1)
+	oc apply -f $(MAKEFILE_DIR)deploy/secrets.yaml
 	oc create secret generic env-healing-agent-vertex \
 	  --from-literal=project-id=$(ANTHROPIC_VERTEX_PROJECT_ID) \
 	  --from-literal=region=$(CLOUD_ML_REGION) \
-	  -n env-healing-agent \
+	  -n env-healing-agent-ns \
 	  --dry-run=client -o yaml | oc apply -f -
 	oc apply -f $(MAKEFILE_DIR)deploy/configmap.yaml
 	oc apply -f $(MAKEFILE_DIR)deploy/rbac.yaml
@@ -52,4 +53,4 @@ undeploy:
 	oc delete -f $(MAKEFILE_DIR)deploy/deployment.yaml --ignore-not-found
 	oc delete -f $(MAKEFILE_DIR)deploy/rbac.yaml       --ignore-not-found
 	oc delete -f $(MAKEFILE_DIR)deploy/configmap.yaml  --ignore-not-found
-	oc delete secret env-healing-agent-vertex -n env-healing-agent --ignore-not-found
+	oc delete -f $(MAKEFILE_DIR)deploy/secrets.yaml    --ignore-not-found

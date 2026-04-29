@@ -12,7 +12,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: env-healing-agent-known-issues-1
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent
     knowledge-base: known-issues
@@ -76,7 +76,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: env-healing-agent-known-issues-2
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent
     knowledge-base: known-issues
@@ -141,7 +141,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: env-healing-agent-fix-strategies-1
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent
     knowledge-base: fix-strategies
@@ -339,7 +339,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: env-healing-agent-remediation-outcomes-1
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent
     knowledge-base: remediation-outcomes
@@ -356,7 +356,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: env-healing-agent-init-script
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent
 data:

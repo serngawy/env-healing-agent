@@ -22,7 +22,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: env-healing-agent-pipe
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent-pipe
     stream-type: pipe
@@ -82,7 +82,7 @@ spec:
         # Agent: reads from the FIFO via stdin (pipe subcommand).
         # ----------------------------------------------------------------
         - name: env-healing-agent
-          image: quay.io/melserng/test-assisted-agent:latest
+          image: quay.io/melserng/env-healing-agent:latest
           imagePullPolicy: Always
           # The shell redirect feeds the FIFO into the agent's stdin.
           command: ["/bin/sh", "-c"]

@@ -16,7 +16,7 @@
 #     --from-literal=access-key-id=<KEY> \
 #     --from-literal=secret-access-key=<SECRET> \
 #     --from-literal=region=us-east-1 \
-#     -n rosa-hcp-agent
+#     -n env-healing-agent-ns
 #
 # Customise:
 #   CLOUDWATCH_LOG_GROUP — the log group to watch
@@ -28,7 +28,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: env-healing-agent-cloudwatch
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent-cloudwatch
     stream-type: cloudwatch
@@ -64,7 +64,7 @@ spec:
 
       containers:
         - name: env-healing-agent
-          image: quay.io/melserng/test-assisted-agent:latest
+          image: quay.io/melserng/env-healing-agent:latest
           imagePullPolicy: Always
           command: ["python", "-m", "env_healing_agent.cli"]
           args:

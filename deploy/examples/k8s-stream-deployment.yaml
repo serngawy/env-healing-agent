@@ -23,7 +23,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: env-healing-agent-k8s-stream
-  namespace: env-healing-agent
+  namespace: env-healing-agent-ns
   labels:
     app: env-healing-agent-k8s-stream
     stream-type: kubernetes
