@@ -62,7 +62,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Extra log streams (can be combined with any framework)
     parser.add_argument("--k8s-pod", help="Stream logs from this Kubernetes pod alongside the framework output")
-    parser.add_argument("--k8s-namespace", default="default", help="Namespace for --k8s-pod")
+    parser.add_argument("--k8s-namespace", action="append", metavar="NS", dest="k8s_namespaces",
+                        help="Namespace(s) to watch (repeatable). Use '*' for all namespaces. Default: default")
     parser.add_argument("--k8s-label", help="Stream logs from pods matching this label selector")
     parser.add_argument("--k8s-cmd", default="kubectl", help="kubectl binary to use in subprocess mode (default: kubectl)")
     parser.add_argument("--tail-file", action="append", metavar="PATH", help="Tail additional log file(s) (repeatable)")
@@ -178,7 +179,7 @@ def main(argv=None):
         extra_streams.append(
             KubernetesLogStream(
                 pod=args.k8s_pod or "",
-                namespace=args.k8s_namespace,
+                namespace=args.k8s_namespaces or ["default"],
                 label_selector=args.k8s_label,
                 kubectl_cmd=args.k8s_cmd,
             )

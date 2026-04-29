@@ -27,7 +27,7 @@ Label-selector streaming (SDK mode)
 import os
 import queue
 import threading
-from typing import Dict, Iterator, List, Optional
+from typing import Dict, Iterator, List, Optional, Union
 
 from .base_stream import BaseLogStream
 from .stdout_stream import StdoutStream
@@ -48,14 +48,16 @@ def _parse_since_seconds(since: str) -> int:
 
 class KubernetesLogStream(BaseLogStream):
     """
-    Stream logs from a Kubernetes pod or label-selected set of pods.
+    Stream logs from a Kubernetes pod or label-selected set of pods across
+    one or more namespaces.
 
     Parameters
     ----------
     pod:            Pod name (used when label_selector is not set).
-    namespace:      Kubernetes namespace.
+    namespace:      One namespace (str), a list of namespaces, or "*" / ["*"]
+                    to watch all namespaces. Defaults to "default".
     container:      Container name within the pod (optional).
-    label_selector: Label selector string, e.g. "app=my-test".
+    label_selector: Label selector string, e.g. "app=my-service".
                     When set, all matching pods are streamed concurrently.
     previous:       Stream logs from the previous terminated container.
     since:          Only return logs newer than this relative duration ('1h', '30m').
@@ -63,12 +65,20 @@ class KubernetesLogStream(BaseLogStream):
     use_sdk:        True  → kubernetes Python SDK (in-cluster auth).
                     False → kubectl subprocess.
                     None  → auto-detect from KUBERNETES_SERVICE_HOST.
+
+    Multiple namespace examples
+    ---------------------------
+    # Two specific namespaces
+    KubernetesLogStream(label_selector="app=worker", namespace=["ns-a", "ns-b"])
+
+    # All namespaces
+    KubernetesLogStream(label_selector="app=worker", namespace="*")
     """
 
     def __init__(
         self,
         pod: str = "",
-        namespace: str = "default",
+        namespace: Union[str, List[str]] = "default",
         container: Optional[str] = None,
         label_selector: Optional[str] = None,
         previous: bool = False,
@@ -79,7 +89,7 @@ class KubernetesLogStream(BaseLogStream):
         use_sdk: Optional[bool] = None,
     ):
         self.pod = pod
-        self.namespace = namespace
+        self.namespaces = self._normalize_namespaces(namespace)
         self.container = container
         self.label_selector = label_selector
         self.previous = previous
@@ -90,17 +100,37 @@ class KubernetesLogStream(BaseLogStream):
             use_sdk = os.environ.get("KUBERNETES_SERVICE_HOST") is not None
         self.use_sdk = use_sdk
 
-        stream_name = name or f"k8s:{namespace}/{pod or label_selector}"
+        ns_label = "*" if self._all_namespaces else ",".join(self.namespaces)
+        stream_name = name or f"k8s:{ns_label}/{pod or label_selector}"
         super().__init__(stream_name, metadata)
-        self._inner: Optional[StdoutStream] = None
+        self._inner_streams: List[StdoutStream] = []
         self._stop_event = threading.Event()
+
+    @staticmethod
+    def _normalize_namespaces(namespace: Union[str, List[str]]) -> List[str]:
+        """Return a deduplicated list of namespace strings."""
+        if isinstance(namespace, str):
+            return [namespace]
+        return list(dict.fromkeys(namespace))  # deduplicate, preserve order
+
+    @property
+    def _all_namespaces(self) -> bool:
+        return self.namespaces == ["*"]
+
+    # kept for backward compatibility
+    @property
+    def namespace(self) -> str:
+        return self.namespaces[0] if not self._all_namespaces else "*"
 
     # ------------------------------------------------------------------
     # Subprocess mode
     # ------------------------------------------------------------------
 
-    def _build_command(self) -> List[str]:
-        cmd = [self.kubectl_cmd, "logs", "-f", "-n", self.namespace]
+    def _build_command(self, namespace: str) -> List[str]:
+        if self._all_namespaces:
+            cmd = [self.kubectl_cmd, "logs", "-f", "-A"]
+        else:
+            cmd = [self.kubectl_cmd, "logs", "-f", "-n", namespace]
         if self.label_selector:
             cmd += ["-l", self.label_selector, "--max-log-requests=10"]
         else:
@@ -116,14 +146,39 @@ class KubernetesLogStream(BaseLogStream):
         return cmd
 
     def _iter_subprocess(self) -> Iterator[LogLine]:
-        self._inner = StdoutStream(
-            command=self._build_command(),
-            name=self.name,
-            metadata={**self.metadata, "framework": "kubernetes", "mode": "subprocess"},
-        )
-        self._inner.start()
+        # One subprocess per namespace; for "*" a single -A subprocess suffices.
+        target_namespaces = ["*"] if self._all_namespaces else self.namespaces
+        out_q: "queue.Queue[object]" = queue.Queue()
+
+        for ns in target_namespaces:
+            stream = StdoutStream(
+                command=self._build_command(ns),
+                name=f"{self.name}/{ns}",
+                metadata={**self.metadata, "framework": "kubernetes", "mode": "subprocess", "namespace": ns},
+            )
+            self._inner_streams.append(stream)
+            stream.start()
+            threading.Thread(
+                target=self._drain_stdout_stream,
+                args=(stream, out_q),
+                daemon=True,
+            ).start()
+
         self._running = True
-        yield from self._inner
+        remaining = len(target_namespaces)
+        while remaining > 0:
+            item = out_q.get()
+            if item is _SENTINEL:
+                remaining -= 1
+            else:
+                yield item  # type: ignore[misc]
+
+    def _drain_stdout_stream(self, stream: StdoutStream, out_q: "queue.Queue[object]") -> None:
+        try:
+            for log_line in stream:
+                out_q.put(log_line)
+        finally:
+            out_q.put(_SENTINEL)
 
     # ------------------------------------------------------------------
     # SDK mode (in-cluster service account auth)
@@ -142,30 +197,40 @@ class KubernetesLogStream(BaseLogStream):
         except Exception:
             k8s_config.load_kube_config()
 
-    def _resolve_pods(self) -> List[str]:
+    def _resolve_pods(self) -> List[tuple]:
+        """Return a list of (pod_name, namespace) tuples across all watched namespaces."""
         from kubernetes import client
         v1 = client.CoreV1Api()
-        if self.label_selector:
-            pod_list = v1.list_namespaced_pod(
-                namespace=self.namespace,
-                label_selector=self.label_selector,
-            )
-            return [p.metadata.name for p in pod_list.items]
-        if self.pod:
-            return [self.pod]
-        raise ValueError("Either pod or label_selector must be specified")
+        pods: List[tuple] = []
 
-    def _stream_single_pod(self, pod_name: str, out_q: "queue.Queue[object]") -> None:
-        """
-        Stream one pod's logs into out_q. Runs in a daemon thread.
-        Puts _SENTINEL into out_q when the stream ends (for any reason).
-        """
+        if self._all_namespaces:
+            if self.label_selector:
+                pod_list = v1.list_pod_for_all_namespaces(label_selector=self.label_selector)
+            else:
+                pod_list = v1.list_pod_for_all_namespaces()
+            pods = [(p.metadata.name, p.metadata.namespace) for p in pod_list.items]
+            if self.pod:
+                pods = [(n, ns) for n, ns in pods if n == self.pod]
+        else:
+            for ns in self.namespaces:
+                if self.label_selector:
+                    pod_list = v1.list_namespaced_pod(namespace=ns, label_selector=self.label_selector)
+                    pods += [(p.metadata.name, ns) for p in pod_list.items]
+                elif self.pod:
+                    pods.append((self.pod, ns))
+                else:
+                    raise ValueError("Either pod or label_selector must be specified")
+
+        return pods
+
+    def _stream_single_pod(self, pod_name: str, namespace: str, out_q: "queue.Queue[object]") -> None:
+        """Stream one pod's logs into out_q. Runs in a daemon thread."""
         from kubernetes import client
         v1 = client.CoreV1Api()
         try:
             kwargs: Dict = dict(
                 name=pod_name,
-                namespace=self.namespace,
+                namespace=namespace,
                 follow=True,
                 _preload_content=False,
             )
@@ -185,18 +250,18 @@ class KubernetesLogStream(BaseLogStream):
                     if content:
                         out_q.put(LogLine(
                             content=content,
-                            stream_name=f"{self.name}/{pod_name}",
+                            stream_name=f"{self.name}/{namespace}/{pod_name}",
                             stream_metadata={
                                 **self.metadata,
                                 "framework": "kubernetes",
                                 "mode": "sdk",
                                 "pod": pod_name,
-                                "namespace": self.namespace,
+                                "namespace": namespace,
                             },
                         ))
         except Exception as exc:
             out_q.put(LogLine(
-                content=f"[k8s-stream error] pod={pod_name} namespace={self.namespace}: {exc}",
+                content=f"[k8s-stream error] pod={pod_name} namespace={namespace}: {exc}",
                 stream_name=self.name,
                 stream_metadata={**self.metadata, "error": str(exc)},
             ))
@@ -205,20 +270,20 @@ class KubernetesLogStream(BaseLogStream):
 
     def _iter_sdk(self) -> Iterator[LogLine]:
         self._load_kube_config()
-        pod_names = self._resolve_pods()
-        if not pod_names:
+        pods = self._resolve_pods()
+        if not pods:
             return
 
         out_q: "queue.Queue[object]" = queue.Queue()
-        for pod_name in pod_names:
+        for pod_name, namespace in pods:
             threading.Thread(
                 target=self._stream_single_pod,
-                args=(pod_name, out_q),
+                args=(pod_name, namespace, out_q),
                 daemon=True,
             ).start()
 
         self._running = True
-        remaining = len(pod_names)
+        remaining = len(pods)
         while remaining > 0:
             item = out_q.get()
             if item is _SENTINEL:
@@ -236,8 +301,8 @@ class KubernetesLogStream(BaseLogStream):
 
     def stop(self) -> None:
         self._stop_event.set()
-        if self._inner:
-            self._inner.stop()
+        for stream in self._inner_streams:
+            stream.stop()
         self._running = False
 
     def __iter__(self) -> Iterator[LogLine]:
