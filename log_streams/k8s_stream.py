@@ -108,10 +108,10 @@ class KubernetesLogStream(BaseLogStream):
 
     @staticmethod
     def _normalize_namespaces(namespace: Union[str, List[str]]) -> List[str]:
-        """Return a deduplicated list of namespace strings."""
+        """Return a deduplicated, non-empty list of namespace strings."""
         if isinstance(namespace, str):
-            return [namespace]
-        return list(dict.fromkeys(namespace))  # deduplicate, preserve order
+            return [namespace] if namespace else []
+        return list(dict.fromkeys(ns for ns in namespace if ns))  # filter empty, deduplicate
 
     @property
     def _all_namespaces(self) -> bool:

@@ -62,7 +62,13 @@ spec:
 
           # Run in generic mode with a no-op main process.
           # The agent monitors Kubernetes pod logs via --k8s-label.
-          # Override WATCH_LABEL / WATCH_NAMESPACE to target your test pods.
+          #
+          # Namespace modes:
+          #   Single namespace    — set WATCH_NAMESPACE_1; leave the rest empty
+          #   Multiple namespaces — set WATCH_NAMESPACE_1..4 (empty values are skipped)
+          #   All namespaces      — set WATCH_NAMESPACE_1 to "*"
+          #
+          # Override via Makefile: make deploy WATCH_LABEL=app=my-svc WATCH_NAMESPACE="ns-a ns-b"
           command: ["python", "-m", "env_healing_agent.cli"]
           args:
             - "generic"
@@ -72,15 +78,29 @@ spec:
             - "/kb"
             - "--k8s-label"
             - "$(WATCH_LABEL)"
+            # One --k8s-namespace per watched namespace; empty values are ignored by the CLI.
+            # To watch all namespaces set WATCH_NAMESPACE_1 to "*" and clear the rest.
             - "--k8s-namespace"
-            - "$(WATCH_NAMESPACE)"
+            - "$(WATCH_NAMESPACE_1)"
+            - "--k8s-namespace"
+            - "$(WATCH_NAMESPACE_2)"
+            - "--k8s-namespace"
+            - "$(WATCH_NAMESPACE_3)"
+            - "--k8s-namespace"
+            - "$(WATCH_NAMESPACE_4)"
             - "--verbose"
 
           env:
             - name: WATCH_LABEL
               value: "app=test-env"
-            - name: WATCH_NAMESPACE
+            - name: WATCH_NAMESPACE_1
               value: "default"
+            - name: WATCH_NAMESPACE_2
+              value: "kube-system"
+            - name: WATCH_NAMESPACE_3
+              value: ""
+            - name: WATCH_NAMESPACE_4
+              value: ""
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: ANTHROPIC_VERTEX_PROJECT_ID
