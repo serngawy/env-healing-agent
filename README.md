@@ -118,6 +118,36 @@ All streams implement `BaseLogStream` and the context manager protocol (`with st
 
 Override explicitly with `use_sdk=True` or `use_sdk=False`. When `label_selector` is used in SDK mode, every matching pod is streamed concurrently.
 
+#### Multi-namespace support
+
+The `namespace` parameter accepts a single namespace string, a list of strings, or `"*"` to watch every namespace. SDK mode calls `list_pod_for_all_namespaces()` for the `"*"` case; subprocess mode spawns one `kubectl logs -f` thread per namespace. Overlapping or duplicate entries are automatically de-duplicated.
+
+```python
+# Single namespace (default)
+KubernetesLogStream(label_selector="app=worker", namespace="default")
+
+# Two specific namespaces — streams merged into one queue
+KubernetesLogStream(label_selector="app=worker", namespace=["ns-a", "ns-b"])
+
+# All namespaces — requires ClusterRole with list/watch on pods cluster-wide
+KubernetesLogStream(label_selector="app=worker", namespace="*")
+```
+
+From the CLI, pass `--k8s-namespace` once per namespace or use `"*"` for all:
+
+```bash
+# Two namespaces
+python -m env_healing_agent.cli generic sleep infinity \
+    --k8s-label app=my-service \
+    --k8s-namespace default \
+    --k8s-namespace kube-system
+
+# All namespaces
+python -m env_healing_agent.cli generic sleep infinity \
+    --k8s-label app=my-service \
+    --k8s-namespace "*"
+```
+
 ### JournaldStream — in-pod requirements
 
 journald runs on the **host**, not inside a container. To use `JournaldStream` from a pod:
@@ -239,7 +269,7 @@ python -m env_healing_agent.cli <runner> [runner-args] [common-flags]
 | Flag | Description |
 |---|---|
 | `--k8s-pod NAME` | Also stream logs from this Kubernetes pod |
-| `--k8s-namespace NS` | Namespace for `--k8s-pod` (default: `default`) |
+| `--k8s-namespace NS` | Namespace to watch — **repeatable** (one per namespace). Use `"*"` for all namespaces. Default: `default` |
 | `--k8s-label SELECTOR` | Stream logs from pods matching this label selector |
 | `--k8s-cmd CMD` | kubectl binary for subprocess mode (ignored in SDK mode) |
 | `--tail-file PATH` | Tail an additional log file (repeatable) |
@@ -485,7 +515,19 @@ Two paths — Claude AI (primary) and built-in methods (fallback).
 
 #### Claude AI path (primary)
 
-When `ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` are set, the agent filters the captured log buffer to **error and failure lines only**, includes 10 lines of context before and after each, and sends the result to Claude along with:
+When `ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` are set, the agent uses **Vertex AI** (GCP Application Default Credentials) to call Claude — no API key required. Inside Kubernetes, Workload Identity or the node service account handles authentication automatically.
+
+Before sending logs to Claude, the captured buffer is filtered to **error-window segments only**:
+
+1. Lines matching `error`, `fail`, `failed`, `failing`, `fatal`, `exception`, or `traceback` are identified (case-insensitive).
+2. Each match expands to a window of ±10 lines of context.
+3. Overlapping or adjacent windows are merged into one.
+4. Sections are separated by `--- window N (lines X–Y) ---` markers so Claude can orient itself.
+5. If no error lines are found, the last 30 lines are sent as a fallback.
+
+This keeps each API call focused and token-efficient regardless of how verbose the workload output is.
+
+The filtered windows are sent to Claude together with:
 
 - The detected issue type
 - Existing patterns from `known_issues.json` (for deduplication)
@@ -494,10 +536,10 @@ When `ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` are set, the agent filt
 Claude returns a structured diagnosis **and** any new issue patterns it identifies. New patterns are written to `known_issues.json` immediately and used for all subsequent matches in the same session.
 
 ```
-Error/failure log windows (±10 lines context each)
+Error-window log segments (±10 lines context, merged, with --- window N --- markers)
   + issue type + existing patterns + fix strategy keys
         │
-        ▼  Anthropic API  (claude-sonnet-4-6)
+        ▼  Claude via Anthropic Vertex AI  (claude-sonnet-4-6, GCP ADC auth)
         │
         ├── diagnosis    → root_cause, confidence, recommended_fix, fix_parameters
         └── new_patterns → persisted to known_issues.json (de-duped by type)
