@@ -1,23 +1,29 @@
-# KubernetesLogStream — watch live pod logs via the Kubernetes API
+# KubernetesLogStream — watch live pod logs across multiple namespaces
 #
 # Scenario: The agent runs as a standalone monitor pod and streams logs
-# from all pods matching a label selector in real time. Authentication
-# uses the mounted service account token automatically (SDK mode) —
-# no kubectl binary or kubeconfig needed.
+# from all pods matching a label selector in real time across one or more
+# namespaces. Authentication uses the mounted service account token
+# automatically (SDK mode) — no kubectl binary or kubeconfig needed.
+#
+# Namespace modes:
+#   Single namespace   — one --k8s-namespace flag
+#   Multiple namespaces — repeat --k8s-namespace for each namespace
+#   All namespaces     — set --k8s-namespace to "*"
 #
 # Prerequisites:
 #   oc apply -f ../configmap.yaml   # namespace + knowledge-base ConfigMaps
 #   oc apply -f ../rbac.yaml        # ServiceAccount + ClusterRole (pods/log)
 #
 # Customise:
-#   WATCH_LABEL     — label selector for the pods to watch
-#   WATCH_NAMESPACE — namespace those pods live in
+#   WATCH_LABEL — label selector for the pods to watch
+#   WATCH_NAMESPACE_1, WATCH_NAMESPACE_2 — namespaces to watch
+#   (add or remove --k8s-namespace args and env vars as needed)
 # ---------------------------------------------------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: env-healing-agent-k8s-stream
-  namespace: rosa-hcp-agent
+  namespace: env-healing-agent
   labels:
     app: env-healing-agent-k8s-stream
     stream-type: kubernetes
@@ -53,7 +59,7 @@ spec:
 
       containers:
         - name: env-healing-agent
-          image: quay.io/melserng/test-assisted-agent:latest
+          image: quay.io/melserng/env-healing-agent:latest
           imagePullPolicy: Always
           command: ["python", "-m", "env_healing_agent.cli"]
           args:
@@ -62,19 +68,23 @@ spec:
             - "infinity"
             - "--kb-dir"
             - "/kb"
-            # Stream logs from all pods with this label in WATCH_NAMESPACE.
-            # SDK mode is auto-detected — KUBERNETES_SERVICE_HOST is always
-            # set inside a pod, so no --k8s-cmd flag is needed.
+            # SDK mode is auto-detected inside a pod — no --k8s-cmd needed.
             - "--k8s-label"
             - "$(WATCH_LABEL)"
+            # Repeat --k8s-namespace for each namespace to watch.
+            # Replace with a single --k8s-namespace "*" to watch all namespaces.
             - "--k8s-namespace"
-            - "$(WATCH_NAMESPACE)"
+            - "$(WATCH_NAMESPACE_1)"
+            - "--k8s-namespace"
+            - "$(WATCH_NAMESPACE_2)"
             - "--verbose"
           env:
             - name: WATCH_LABEL
-              value: "app=rosa-hcp-test"
-            - name: WATCH_NAMESPACE
+              value: "app=my-service"
+            - name: WATCH_NAMESPACE_1
               value: "default"
+            - name: WATCH_NAMESPACE_2
+              value: "kube-system"
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: ANTHROPIC_VERTEX_PROJECT_ID
@@ -121,3 +131,11 @@ spec:
         - name: remediation-outcomes-1
           configMap:
             name: env-healing-agent-remediation-outcomes-1
+
+# ---------------------------------------------------------------------------
+# To watch ALL namespaces instead, replace the two --k8s-namespace args above
+# with a single:
+#   - "--k8s-namespace"
+#   - "*"
+# and ensure the ClusterRole in rbac.yaml has list/watch on pods cluster-wide.
+# ---------------------------------------------------------------------------
