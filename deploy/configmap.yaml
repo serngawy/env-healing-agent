@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: rosa-hcp-agent
+  name: env-healing-agent-ns
 
 ---
 # ---------------------------------------------------------------------------

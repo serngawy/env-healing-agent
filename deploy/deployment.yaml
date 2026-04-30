@@ -71,9 +71,7 @@ spec:
           # Override via Makefile: make deploy WATCH_LABEL=app=my-svc WATCH_NAMESPACE="ns-a ns-b"
           command: ["python", "-m", "env_healing_agent.cli"]
           args:
-            - "generic"
-            - "sleep"
-            - "infinity"
+            # Global flags must come before the subcommand.
             - "--kb-dir"
             - "/kb"
             - "--k8s-label"
@@ -89,6 +87,10 @@ spec:
             - "--k8s-namespace"
             - "$(WATCH_NAMESPACE_4)"
             - "--verbose"
+            # Subcommand: run a no-op process so the agent stays alive as a monitor.
+            - "generic"
+            - "sleep"
+            - "infinity"
 
           env:
             - name: WATCH_LABEL
