@@ -105,6 +105,18 @@ spec:
               value: ""
             - name: PYTHONUNBUFFERED
               value: "1"
+            # Pod's own namespace — used by _sync_to_configmap to patch the right namespace
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # ConfigMap names the agent will patch when it persists new knowledge at runtime
+            - name: KNOWN_ISSUES_CONFIGMAP
+              value: "env-healing-agent-known-issues-1"
+            - name: FIX_STRATEGIES_CONFIGMAP
+              value: "env-healing-agent-fix-strategies-1"
+            - name: REMEDIATION_OUTCOMES_CONFIGMAP
+              value: "env-healing-agent-remediation-outcomes-1"
             - name: ANTHROPIC_VERTEX_PROJECT_ID
               valueFrom:
                 secretKeyRef:
@@ -115,27 +127,41 @@ spec:
                 secretKeyRef:
                   name: env-healing-agent-vertex
                   key: region
-            # AWS credentials for fix strategies (retry_cloudformation_delete, cleanup_vpc_dependencies)
-            - name: AWS_DEFAULT_REGION
+            # AWS credentials file mounted from secret
+            - name: AWS_SHARED_CREDENTIALS_FILE
+              value: "/root/.aws/credentials"
+            # OCM credentials for rosa login + rosa create ocm-role fix strategy
+            - name: OCM_API_URL
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-aws-credentials
-                  key: region
-            - name: AWS_ACCESS_KEY_ID
+                  name: env-healing-agent-ocm-credentials
+                  key: ocmApiUrl
+            - name: OCM_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-aws-credentials
-                  key: access-key-id
-            - name: AWS_SECRET_ACCESS_KEY
+                  name: env-healing-agent-ocm-credentials
+                  key: ocmClientID
+            - name: OCM_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-aws-credentials
-                  key: secret-access-key
+                  name: env-healing-agent-ocm-credentials
+                  key: ocmClientSecret
+            # GCP Service Account key for Vertex AI authentication
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/gcp/sa-key.json"
 
           volumeMounts:
             # Merged knowledge base written by the init container
             - name: knowledge-base
               mountPath: /kb
+            # GCP SA key for Vertex AI ADC
+            - name: gcp-sa
+              mountPath: /gcp
+              readOnly: true
+            # AWS credentials file
+            - name: aws-credentials
+              mountPath: /root/.aws
+              readOnly: true
             # Uncomment to enable FileTailStream on a host log directory
             # - name: host-test-logs
             #   mountPath: /host/var/log/my-test-runner
@@ -196,6 +222,16 @@ spec:
         - name: remediation-outcomes-1
           configMap:
             name: env-healing-agent-remediation-outcomes-1
+
+        # GCP Service Account key for Vertex AI authentication
+        - name: gcp-sa
+          secret:
+            secretName: env-healing-agent-gcp-sa
+
+        # AWS credentials file
+        - name: aws-credentials
+          secret:
+            secretName: env-healing-agent-aws-credentials
 
         # -----------------------------------------------------------------------
         # Optional: FileTailStream — mount a host log file or emptyDir log path.

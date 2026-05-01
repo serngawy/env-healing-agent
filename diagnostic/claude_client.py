@@ -139,7 +139,7 @@ class ClaudeClient:
         issue_type: str,
         log_chunk: List[str],
         known_patterns: List[Dict],
-        fix_strategy_keys: List[str],
+        fix_strategies: Dict,
     ) -> Tuple[Optional[Dict], List[Dict]]:
         """
         Ask Claude to diagnose an issue from a log chunk.
@@ -156,8 +156,9 @@ class ClaudeClient:
             Full sliding-window buffer from the monitoring agent.
         known_patterns
             Current entries from known_issues.json — used for deduplication.
-        fix_strategy_keys
-            Valid keys from fix_strategies.json — Claude must choose from these.
+        fix_strategies
+            Dict from fix_strategies.json — keys and descriptions sent to Claude
+            so it can make an informed choice.
 
         Returns
         -------
@@ -176,11 +177,16 @@ class ClaudeClient:
             for p in known_patterns
         ]
 
+        fix_summary = {
+            key: strat.get("description", "")
+            for key, strat in fix_strategies.items()
+        }
+
         payload = {
             "issue_type": issue_type,
             "log_chunk": log_text,
             "existing_patterns": existing_summary,
-            "available_fix_strategies": fix_strategy_keys,
+            "available_fix_strategies": fix_summary,
         }
 
         response = self._client.messages.create(

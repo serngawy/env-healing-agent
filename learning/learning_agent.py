@@ -14,6 +14,7 @@ Safety model:
 """
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -57,6 +58,8 @@ class LearningAgent(BaseAgent):
         self.session_outcomes.append(outcome)
         status = "SUCCESS" if success else "FAILED"
         self.log(f"Outcome recorded: {issue_type} -> {fix_applied} = {status}", "info")
+        self._append_outcomes()
+        self._sync_outcomes_to_configmap()
 
     def end_of_run_summary(self) -> Dict:
         """Analyze session outcomes and update knowledge base confidence scores."""
@@ -209,6 +212,17 @@ class LearningAgent(BaseAgent):
             self.session_outcomes = []
         except Exception as e:
             self.log(f"Failed to persist outcomes: {e}", "error")
+
+    def _sync_outcomes_to_configmap(self) -> None:
+        cm = os.environ.get("REMEDIATION_OUTCOMES_CONFIGMAP", "")
+        if not cm or not self.outcomes_file.exists():
+            return
+        try:
+            with open(self.outcomes_file, "r") as f:
+                data = json.load(f)
+            self._sync_to_configmap(cm, data)
+        except Exception as e:
+            self.log(f"Failed to sync outcomes to ConfigMap: {e}", "warning")
 
     def _load_all_outcomes(self) -> List[Dict]:
         try:

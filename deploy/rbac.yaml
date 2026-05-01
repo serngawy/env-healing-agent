@@ -26,7 +26,11 @@ rules:
     resources: ["rosacontrolplanes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["infrastructure.cluster.x-k8s.io"]
-    resources: ["rosanetworks", "rosaroleconfigs"]
+    resources: ["rosanetworks", "rosaroleconfigs", "rosamachinepools", "rosaclusters"]
+    verbs: ["get", "list", "watch"]
+  # Read and patch CAPI custom resources for diagnostics
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["clusters", "machinepools"]
     verbs: ["get", "list", "watch"]
   # Read deployments to verify CAPI/CAPA installation
   - apiGroups: ["apps"]
@@ -47,3 +51,33 @@ subjects:
   - kind: ServiceAccount
     name: env-healing-agent
     namespace: env-healing-agent-ns
+---
+# Namespace-scoped Role: allows the agent to patch its own knowledge-base ConfigMaps
+# so that patterns and fix strategies discovered at runtime survive pod restarts.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: env-healing-agent-configmap-writer
+  namespace: env-healing-agent-ns
+  labels:
+    app: env-healing-agent
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: env-healing-agent-configmap-writer
+  namespace: env-healing-agent-ns
+  labels:
+    app: env-healing-agent
+subjects:
+  - kind: ServiceAccount
+    name: env-healing-agent
+    namespace: env-healing-agent-ns
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: env-healing-agent-configmap-writer

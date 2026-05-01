@@ -11,6 +11,7 @@ Key differences from v1:
 
 import json
 import logging
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -88,6 +89,27 @@ class BaseAgent:
         with open(kb_file, "w") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
+
+    def _sync_to_configmap(self, configmap_name: str, data: Dict) -> None:
+        """Patch the source ConfigMap so runtime knowledge changes survive pod restarts."""
+        if not configmap_name:
+            return
+        namespace = os.environ.get("POD_NAMESPACE", "env-healing-agent-ns")
+        try:
+            from kubernetes import client, config as k8s_config
+            try:
+                k8s_config.load_incluster_config()
+            except Exception:
+                k8s_config.load_kube_config()
+            v1 = client.CoreV1Api()
+            v1.patch_namespaced_config_map(
+                name=configmap_name,
+                namespace=namespace,
+                body={"data": {"data.json": json.dumps(data, indent=2)}},
+            )
+            self.log(f"Synced to ConfigMap {configmap_name} in {namespace}", "info")
+        except Exception as e:
+            self.log(f"ConfigMap sync skipped ({configmap_name}): {e}", "warning")
 
     def match_pattern(self, text: str, patterns: List[Dict]) -> Optional[Dict]:
         for pattern_def in patterns:

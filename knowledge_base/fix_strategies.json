@@ -22,14 +22,38 @@
     },
 
     "refresh_ocm_token": {
-      "name": "Refresh OCM Token",
-      "description": "Advisory: OCM credentials need manual refresh — cannot be automated.",
-      "automated": false,
-      "action_type": "advisory",
+      "name": "Rosa Login and Create OCM Role",
+      "description": "Authenticate with OCM using client credentials then create the OCM role so the org is authorized to access the AWS account.",
+      "automated": true,
+      "action_type": "cli_sequence",
       "parameters": [],
       "action": {
-        "message": "OCM token refresh requires manual intervention — update credentials and retry",
-        "success": false
+        "steps": [
+          {
+            "name": "rosa_login",
+            "type": "shell",
+            "shell": [
+              "echo 'Logging in to OCM via rosa...'",
+              "rosa login --client-id \"$OCM_CLIENT_ID\" --client-secret \"$OCM_CLIENT_SECRET\" --env \"$OCM_API_URL\"",
+              "echo 'rosa login complete'"
+            ],
+            "timeout": 60,
+            "optional": false
+          },
+          {
+            "name": "rosa_create_ocm_role",
+            "type": "shell",
+            "shell": [
+              "echo 'Creating OCM role (mode=auto)...'",
+              "rosa create ocm-role --mode auto --yes",
+              "echo 'OCM role creation complete'"
+            ],
+            "timeout": 120,
+            "optional": false
+          }
+        ],
+        "success_message": "OCM role created — org is now authorized to access the AWS account",
+        "failure_message": "Failed to create OCM role — check OCM_CLIENT_ID, OCM_CLIENT_SECRET, and OCM_API_URL env vars"
       }
     },
 

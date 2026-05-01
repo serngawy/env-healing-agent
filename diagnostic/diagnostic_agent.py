@@ -110,14 +110,13 @@ class DiagnosticAgent(BaseAgent):
         log_chunk: List[str] = context.get("buffer", [])
         known_patterns: List[Dict] = self.known_issues.get("patterns", [])
         fix_strategies: Dict = self._load_knowledge("fix_strategies.json").get("fix_strategies", {})
-        fix_keys: List[str] = list(fix_strategies.keys())
 
         try:
             diagnosis, new_patterns = self._claude.diagnose(
                 issue_type=issue_type,
                 log_chunk=log_chunk,
                 known_patterns=known_patterns,
-                fix_strategy_keys=fix_keys,
+                fix_strategies=fix_strategies,
             )
         except Exception as e:
             self.log(f"Claude API error: {e}", "error")
@@ -129,10 +128,14 @@ class DiagnosticAgent(BaseAgent):
         if new_patterns:
             self._persist_new_patterns(new_patterns)
 
+        new_strategies = diagnosis.pop("new_fix_strategies", None)
+        if new_strategies:
+            self._persist_new_fix_strategies(new_strategies)
+
         return diagnosis
 
     def _persist_new_patterns(self, new_patterns: List[Dict]) -> None:
-        """Merge Claude-discovered patterns into known_issues.json."""
+        """Merge Claude-discovered patterns into known_issues.json and sync to ConfigMap."""
         try:
             data = json.loads(json.dumps(self.known_issues))  # deep copy via JSON round-trip
             existing_types = {p.get("type") for p in data.get("patterns", [])}
@@ -153,17 +156,40 @@ class DiagnosticAgent(BaseAgent):
                 return
 
             self._save_knowledge("known_issues.json", data)
-            # Invalidate cache so subsequent diagnoses in this session see the new patterns.
             self._known_issues = None
             self.log(
                 f"Persisted {len(added)} new pattern(s) to known_issues.json: {added}",
                 "success",
             )
+            cm = os.environ.get("KNOWN_ISSUES_CONFIGMAP", "")
+            self._sync_to_configmap(cm, data)
         except OSError as e:
-            # Read-only mount (ConfigMap) — log and continue; patterns are still logged.
             self.log(f"Cannot write to known_issues.json ({e}) — new patterns not persisted", "warning")
         except Exception as e:
             self.log(f"Unexpected error persisting patterns: {e}", "warning")
+
+    def _persist_new_fix_strategies(self, new_strategies: Dict) -> None:
+        """Merge Claude-discovered fix strategies into fix_strategies.json and sync to ConfigMap."""
+        if not new_strategies:
+            return
+        try:
+            data = self._load_knowledge("fix_strategies.json")
+            existing = data.setdefault("fix_strategies", {})
+            added = [k for k in new_strategies if k not in existing]
+            if not added:
+                return
+            existing.update({k: new_strategies[k] for k in added})
+            self._save_knowledge("fix_strategies.json", data)
+            self.log(
+                f"Persisted {len(added)} new fix strategy/strategies to fix_strategies.json: {added}",
+                "success",
+            )
+            cm = os.environ.get("FIX_STRATEGIES_CONFIGMAP", "")
+            self._sync_to_configmap(cm, data)
+        except OSError as e:
+            self.log(f"Cannot write to fix_strategies.json ({e}) — strategies not persisted", "warning")
+        except Exception as e:
+            self.log(f"Unexpected error persisting fix strategies: {e}", "warning")
 
     # ── Built-in fallback ─────────────────────────────────────────────────────
 

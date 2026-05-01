@@ -22,6 +22,13 @@ RUN curl -fsSL \
     | tar -xz -C /usr/local/bin oc kubectl \
     && chmod +x /usr/local/bin/oc /usr/local/bin/kubectl
 
+# ROSA CLI — used by ocm_auth_failure fix strategy (rosa create ocm-role)
+ARG ROSA_VERSION=latest
+RUN curl -fsSL \
+    "https://mirror.openshift.com/pub/openshift-v4/clients/rosa/${ROSA_VERSION}/rosa-linux.tar.gz" \
+    | tar -xz -C /usr/local/bin rosa \
+    && chmod +x /usr/local/bin/rosa
+
 WORKDIR /app
 
 COPY requirements.txt ./

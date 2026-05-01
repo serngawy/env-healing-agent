@@ -27,6 +27,7 @@ Label-selector streaming (SDK mode)
 import os
 import queue
 import threading
+import time
 from typing import Dict, Iterator, List, Optional, Union
 
 from .base_stream import BaseLogStream
@@ -224,49 +225,76 @@ class KubernetesLogStream(BaseLogStream):
         return pods
 
     def _stream_single_pod(self, pod_name: str, namespace: str, out_q: "queue.Queue[object]") -> None:
-        """Stream one pod's logs into out_q. Runs in a daemon thread."""
+        """Stream one pod's logs into out_q, reconnecting on disconnect. Runs in a daemon thread."""
         from kubernetes import client
+        from kubernetes.client.exceptions import ApiException
         v1 = client.CoreV1Api()
-        try:
-            kwargs: Dict = dict(
-                name=pod_name,
-                namespace=namespace,
-                follow=True,
-                _preload_content=False,
-            )
-            if self.container:
-                kwargs["container"] = self.container
-            if self.previous:
-                kwargs["previous"] = True
-            if self.since:
-                kwargs["since_seconds"] = _parse_since_seconds(self.since)
+        # On reconnect request only the last second to avoid replaying old logs.
+        since_seconds: Optional[int] = _parse_since_seconds(self.since) if self.since else None
+        reconnect_delay = 5
 
-            resp = v1.read_namespaced_pod_log(**kwargs)
-            for raw in resp:
-                if self._stop_event.is_set():
+        while not self._stop_event.is_set():
+            try:
+                kwargs: Dict = dict(
+                    name=pod_name,
+                    namespace=namespace,
+                    follow=True,
+                    _preload_content=False,
+                )
+                if self.container:
+                    kwargs["container"] = self.container
+                if self.previous:
+                    kwargs["previous"] = True
+                if since_seconds is not None:
+                    kwargs["since_seconds"] = since_seconds
+
+                resp = v1.read_namespaced_pod_log(**kwargs)
+                for raw in resp:
+                    if self._stop_event.is_set():
+                        break
+                    text = raw.decode("utf-8", errors="replace")
+                    for content in text.splitlines():
+                        if content:
+                            out_q.put(LogLine(
+                                content=content,
+                                stream_name=f"{self.name}/{namespace}/{pod_name}",
+                                stream_metadata={
+                                    **self.metadata,
+                                    "framework": "kubernetes",
+                                    "mode": "sdk",
+                                    "pod": pod_name,
+                                    "namespace": namespace,
+                                },
+                            ))
+
+            except ApiException as exc:
+                if exc.status == 404:
+                    # Pod gone — stop retrying.
+                    out_q.put(LogLine(
+                        content=f"[k8s-stream] pod={pod_name} ns={namespace} not found, stream closed",
+                        stream_name=self.name,
+                        stream_metadata={**self.metadata, "error": str(exc)},
+                    ))
                     break
-                text = raw.decode("utf-8", errors="replace")
-                for content in text.splitlines():
-                    if content:
-                        out_q.put(LogLine(
-                            content=content,
-                            stream_name=f"{self.name}/{namespace}/{pod_name}",
-                            stream_metadata={
-                                **self.metadata,
-                                "framework": "kubernetes",
-                                "mode": "sdk",
-                                "pod": pod_name,
-                                "namespace": namespace,
-                            },
-                        ))
-        except Exception as exc:
-            out_q.put(LogLine(
-                content=f"[k8s-stream error] pod={pod_name} namespace={namespace}: {exc}",
-                stream_name=self.name,
-                stream_metadata={**self.metadata, "error": str(exc)},
-            ))
-        finally:
-            out_q.put(_SENTINEL)
+                out_q.put(LogLine(
+                    content=f"[k8s-stream error] pod={pod_name} ns={namespace}: {exc}",
+                    stream_name=self.name,
+                    stream_metadata={**self.metadata, "error": str(exc)},
+                ))
+
+            except Exception as exc:
+                out_q.put(LogLine(
+                    content=f"[k8s-stream error] pod={pod_name} ns={namespace}: {exc}",
+                    stream_name=self.name,
+                    stream_metadata={**self.metadata, "error": str(exc)},
+                ))
+
+            if not self._stop_event.is_set():
+                # Stream ended (server timeout / disconnect) — reconnect from now.
+                since_seconds = 1
+                time.sleep(reconnect_delay)
+
+        out_q.put(_SENTINEL)
 
     def _iter_sdk(self) -> Iterator[LogLine]:
         self._load_kube_config()
