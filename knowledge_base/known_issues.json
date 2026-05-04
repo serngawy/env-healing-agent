@@ -7,7 +7,7 @@
       "pattern": "CloudFormation stack DELETE_FAILED:.*|FAILED - RETRYING.*cloudformation.*deletion",
       "severity": "high",
       "auto_fix": true,
-      "description": "AWS CloudFormation stack deletion failure — ROSA creates security groups outside CF that block VPC deletion",
+      "description": "AWS CloudFormation stack deletion failure \u2014 ROSA creates security groups outside CF that block VPC deletion",
       "symptoms": [
         "Stack in DELETE_FAILED state",
         "Orphaned AWS resources",
@@ -113,7 +113,7 @@
       "type": "rosanetwork_stuck_deletion",
       "pattern": "FAILED - RETRYING.*(?:rosanetwork|ROSANetwork).*(?:delet|still exists)|FAILED - RETRYING.*(?:delet).*(?:rosanetwork|ROSANetwork)",
       "severity": "high",
-      "auto_fix": true,
+      "auto_fix": false,
       "description": "ROSANetwork stuck in deletion state due to finalizers or VPC dependencies",
       "symptoms": [
         "ROSANetwork has deletionTimestamp but won't delete",
@@ -151,7 +151,7 @@
     },
     {
       "type": "vpc_deletion_failure",
-      "pattern": ".*vpc.*(has dependencies|cannot be deleted|delete.*fail|DELETE_FAILED).*",
+      "pattern": ".*vpc.*(has dependencies|cannot be deleted|delete.*fail|DELETE_FAILED).*|CF stack deletion failed",
       "severity": "high",
       "auto_fix": true,
       "description": "VPC deletion failure due to orphaned dependencies",

@@ -123,23 +123,39 @@
 
     "retry_cloudformation_delete": {
       "name": "Retry CloudFormation Stack Deletion",
-      "description": "Clean up VPC blocking dependencies (endpoints, ENIs, security groups) then retry stack deletion.",
+      "description": "Resolve stack name and region from the ROSANetwork CR (spec.stackName, spec.region), clean up VPC blocking dependencies (endpoints, ENIs, security groups), then retry stack deletion. Claude must extract rosanetwork_name and rosanetwork_namespace from the log (e.g. ROSANetwork=\"ns-rosa-hcp/rosa-vpc\" -> name=rosa-vpc namespace=ns-rosa-hcp) and set them as fix_parameters.",
       "automated": true,
       "action_type": "cli_sequence",
-      "parameters": ["stack_name", "region"],
+      "parameters": ["rosanetwork_name", "rosanetwork_namespace"],
       "action": {
         "steps": [
+          {
+            "name": "resolve_stack_params",
+            "type": "shell",
+            "shell": [
+              "STACK_NAME=$(oc get rosanetwork -n {rosanetwork_namespace} {rosanetwork_name} -o jsonpath='{.spec.stackName}' 2>/dev/null)",
+              "REGION=$(oc get rosanetwork -n {rosanetwork_namespace} {rosanetwork_name} -o jsonpath='{.spec.region}' 2>/dev/null)",
+              "if [ -z \"$STACK_NAME\" ]; then echo 'ERROR: could not resolve spec.stackName from ROSANetwork {rosanetwork_namespace}/{rosanetwork_name}' && exit 1; fi",
+              "if [ -z \"$REGION\" ]; then echo 'ERROR: could not resolve spec.region from ROSANetwork {rosanetwork_namespace}/{rosanetwork_name}' && exit 1; fi",
+              "echo \"Resolved stack_name=$STACK_NAME region=$REGION\"",
+              "echo \"export STACK_NAME=$STACK_NAME\" > /tmp/rosa_stack_vars.sh",
+              "echo \"export REGION=$REGION\" >> /tmp/rosa_stack_vars.sh"
+            ],
+            "timeout": 15,
+            "optional": false
+          },
           {
             "name": "verify_stack_state",
             "type": "shell",
             "shell": [
-              "STATUS=$(aws cloudformation describe-stacks --stack-name {stack_name} --region {region} --query 'Stacks[0].StackStatus' --output text 2>&1)",
+              ". /tmp/rosa_stack_vars.sh",
+              "STATUS=$(aws cloudformation describe-stacks --stack-name \"$STACK_NAME\" --region \"$REGION\" --query 'Stacks[0].StackStatus' --output text 2>&1)",
               "RC=$?",
               "if [ $RC -ne 0 ]; then",
-              "  echo \"$STATUS\" | grep -qi 'does not exist' && echo 'Stack {stack_name} already deleted' && exit 0",
+              "  echo \"$STATUS\" | grep -qi 'does not exist' && echo \"Stack $STACK_NAME already deleted\" && exit 0",
               "  echo \"Error checking stack: $STATUS\" && exit 1",
               "fi",
-              "echo \"Stack {stack_name} status: $STATUS\"",
+              "echo \"Stack $STACK_NAME status: $STATUS\"",
               "case \"$STATUS\" in",
               "  DELETE_FAILED|DELETE_IN_PROGRESS) echo 'Proceeding with VPC cleanup' ;;",
               "  *) echo \"Unexpected state: $STATUS\" && exit 1 ;;",
@@ -152,13 +168,14 @@
             "name": "delete_vpc_endpoints",
             "type": "shell",
             "shell": [
-              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name {stack_name} --region {region} --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
+              ". /tmp/rosa_stack_vars.sh",
+              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name \"$STACK_NAME\" --region \"$REGION\" --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
               "echo \"VPC: ${VPC_ID:-none}\"",
               "[ -z \"$VPC_ID\" ] || ! echo \"$VPC_ID\" | grep -q '^vpc-' && echo 'No VPC found in stack' && exit 0",
-              "VPCE_IDS=$(aws ec2 describe-vpc-endpoints --region {region} --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'VpcEndpoints[*].VpcEndpointId' --output text 2>/dev/null)",
+              "VPCE_IDS=$(aws ec2 describe-vpc-endpoints --region \"$REGION\" --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'VpcEndpoints[*].VpcEndpointId' --output text 2>/dev/null)",
               "if [ -n \"$VPCE_IDS\" ]; then",
               "  echo \"Deleting VPC endpoints: $VPCE_IDS\"",
-              "  aws ec2 delete-vpc-endpoints --region {region} --vpc-endpoint-ids $VPCE_IDS",
+              "  aws ec2 delete-vpc-endpoints --region \"$REGION\" --vpc-endpoint-ids $VPCE_IDS",
               "  echo 'Waiting 20s for ENIs to release after endpoint deletion'",
               "  sleep 20",
               "else",
@@ -172,18 +189,19 @@
             "name": "delete_enis",
             "type": "shell",
             "shell": [
-              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name {stack_name} --region {region} --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
+              ". /tmp/rosa_stack_vars.sh",
+              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name \"$STACK_NAME\" --region \"$REGION\" --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
               "[ -z \"$VPC_ID\" ] || ! echo \"$VPC_ID\" | grep -q '^vpc-' && echo 'No VPC found, skipping ENI cleanup' && exit 0",
               "echo \"Cleaning ENIs in VPC $VPC_ID\"",
-              "ENI_IDS=$(aws ec2 describe-network-interfaces --region {region} --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text 2>/dev/null)",
+              "ENI_IDS=$(aws ec2 describe-network-interfaces --region \"$REGION\" --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text 2>/dev/null)",
               "for ENI_ID in $ENI_IDS; do",
-              "  ATTACH_ID=$(aws ec2 describe-network-interfaces --region {region} --network-interface-ids \"$ENI_ID\" --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null)",
+              "  ATTACH_ID=$(aws ec2 describe-network-interfaces --region \"$REGION\" --network-interface-ids \"$ENI_ID\" --query 'NetworkInterfaces[0].Attachment.AttachmentId' --output text 2>/dev/null)",
               "  if [ -n \"$ATTACH_ID\" ] && [ \"$ATTACH_ID\" != 'None' ] && [ \"$ATTACH_ID\" != 'null' ]; then",
               "    echo \"Detaching $ENI_ID (attachment $ATTACH_ID)\"",
-              "    aws ec2 detach-network-interface --region {region} --attachment-id \"$ATTACH_ID\" --force 2>/dev/null",
+              "    aws ec2 detach-network-interface --region \"$REGION\" --attachment-id \"$ATTACH_ID\" --force 2>/dev/null",
               "    sleep 2",
               "  fi",
-              "  aws ec2 delete-network-interface --region {region} --network-interface-id \"$ENI_ID\" && echo \"Deleted ENI $ENI_ID\" || echo \"Could not delete ENI $ENI_ID\"",
+              "  aws ec2 delete-network-interface --region \"$REGION\" --network-interface-id \"$ENI_ID\" && echo \"Deleted ENI $ENI_ID\" || echo \"Could not delete ENI $ENI_ID\"",
               "done",
               "echo 'ENI cleanup complete'"
             ],
@@ -194,12 +212,13 @@
             "name": "delete_security_groups",
             "type": "shell",
             "shell": [
-              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name {stack_name} --region {region} --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
+              ". /tmp/rosa_stack_vars.sh",
+              "VPC_ID=$(aws cloudformation list-stack-resources --stack-name \"$STACK_NAME\" --region \"$REGION\" --query 'StackResourceSummaries[?ResourceType==`AWS::EC2::VPC`].PhysicalResourceId' --output text 2>/dev/null)",
               "[ -z \"$VPC_ID\" ] || ! echo \"$VPC_ID\" | grep -q '^vpc-' && echo 'No VPC found, skipping SG cleanup' && exit 0",
               "echo \"Cleaning non-default security groups in VPC $VPC_ID\"",
-              "SG_IDS=$(aws ec2 describe-security-groups --region {region} --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null)",
+              "SG_IDS=$(aws ec2 describe-security-groups --region \"$REGION\" --filters 'Name=vpc-id,Values='\"$VPC_ID\" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null)",
               "for SG_ID in $SG_IDS; do",
-              "  aws ec2 delete-security-group --region {region} --group-id \"$SG_ID\" && echo \"Deleted SG $SG_ID\" || echo \"Could not delete SG $SG_ID (may have dependencies)\"",
+              "  aws ec2 delete-security-group --region \"$REGION\" --group-id \"$SG_ID\" && echo \"Deleted SG $SG_ID\" || echo \"Could not delete SG $SG_ID (may have dependencies)\"",
               "done",
               "echo 'Security group cleanup complete'"
             ],
@@ -210,19 +229,20 @@
             "name": "retry_stack_deletion",
             "type": "shell",
             "shell": [
-              "STATUS=$(aws cloudformation describe-stacks --stack-name {stack_name} --region {region} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo 'GONE')",
+              ". /tmp/rosa_stack_vars.sh",
+              "STATUS=$(aws cloudformation describe-stacks --stack-name \"$STACK_NAME\" --region \"$REGION\" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo 'GONE')",
               "echo \"Current stack status: $STATUS\"",
               "if [ \"$STATUS\" = 'DELETE_FAILED' ]; then",
-              "  echo 'Retrying CloudFormation deletion for {stack_name}'",
-              "  aws cloudformation delete-stack --stack-name {stack_name} --region {region}",
+              "  echo \"Retrying CloudFormation deletion for $STACK_NAME\"",
+              "  aws cloudformation delete-stack --stack-name \"$STACK_NAME\" --region \"$REGION\"",
               "  sleep 5",
-              "  NEW_STATUS=$(aws cloudformation describe-stacks --stack-name {stack_name} --region {region} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo 'GONE')",
+              "  NEW_STATUS=$(aws cloudformation describe-stacks --stack-name \"$STACK_NAME\" --region \"$REGION\" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo 'GONE')",
               "  echo \"Status after retry: $NEW_STATUS\"",
               "  [ \"$NEW_STATUS\" = 'DELETE_FAILED' ] && echo 'Stack re-entered DELETE_FAILED -- dependencies may remain' && exit 1",
               "elif [ \"$STATUS\" = 'DELETE_IN_PROGRESS' ]; then",
-              "  echo 'Stack {stack_name} is DELETE_IN_PROGRESS -- VPC cleanup should unblock it'",
+              "  echo \"Stack $STACK_NAME is DELETE_IN_PROGRESS -- VPC cleanup should unblock it\"",
               "elif [ \"$STATUS\" = 'GONE' ]; then",
-              "  echo 'Stack {stack_name} already deleted'",
+              "  echo \"Stack $STACK_NAME already deleted\"",
               "fi",
               "echo 'Retry sequence complete'"
             ],
@@ -230,8 +250,8 @@
             "optional": false
           }
         ],
-        "success_message": "CloudFormation stack {stack_name} cleanup and retry complete",
-        "failure_message": "Failed to clean up or retry CloudFormation stack {stack_name}"
+        "success_message": "CloudFormation stack cleanup and retry complete",
+        "failure_message": "Failed to clean up or retry CloudFormation stack"
       }
     },
 

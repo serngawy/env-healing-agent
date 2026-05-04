@@ -49,15 +49,10 @@ class TrackedIssue:
         return self.state == IssueState.FAILED and self.attempts < self.max_attempts
 
     def should_intervene(self) -> bool:
+        if self.attempts >= self.max_attempts:
+            return False
         if self.state == IssueState.RESOLVED:
-            return self.attempts < self.max_attempts and (time.time() - self.last_updated) >= 120
-        if (
-            self.state == IssueState.FAILED
-            and self.attempts >= self.max_attempts
-            and (time.time() - self.last_updated) >= 120
-        ):
-            self.max_attempts += 1
-            return True
+            return (time.time() - self.last_updated) >= 120
         if not (self.state == IssueState.DETECTED or self.can_retry()):
             return False
         if self.attempts > 0 and (time.time() - self.last_updated) < 60:

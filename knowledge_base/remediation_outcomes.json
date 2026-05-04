@@ -1,1 +1,122 @@
-[]
+[
+  {
+    "timestamp": "2026-05-01T20:19:33.379738",
+    "issue_type": "ocm_auth_failure",
+    "recommended_fix": "refresh_ocm_token",
+    "success": true,
+    "confidence_used": 0.98,
+    "root_cause": "The OCM organization '12345abcdef' is not authorized to access AWS Account '12345678901' because the required OCM role has not been created and linked; the CLUSTERS-MGMT-403 error explicitly states that an administrator must first run 'rosa create ocm-role' before cluster creation can proceed.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T18:49:08.396988",
+    "issue_type": "ocm_auth_failure",
+    "recommended_fix": "refresh_ocm_token",
+    "success": true,
+    "confidence_used": 0.98,
+    "root_cause": "The OCM organization '12345abcdef' is not authorized to access AWS Account '12345678901' because the required OCM role has not been created; an administrator must run 'rosa create ocm-role' to establish the trust link between the OCM organization and the AWS account.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T18:50:20.138757",
+    "issue_type": "ocm_auth_failure",
+    "recommended_fix": "refresh_ocm_token",
+    "success": true,
+    "confidence_used": 0.98,
+    "root_cause": "The OCM organization '12345abcdef' has not been linked to the AWS account '12345678901' because the 'ocm-role' IAM role has never been created via 'rosa create ocm-role', causing OCM to return a 403 authorization error when the ROSA controller attempts to create the cluster.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T18:52:53.627237",
+    "issue_type": "ocm_auth_failure",
+    "recommended_fix": "refresh_ocm_token",
+    "success": true,
+    "confidence_used": 0.97,
+    "root_cause": "The OCM organization '12345abcdef' is not authorized to access AWS account '12345678901' because the required 'ocm-role' IAM role has never been created via 'rosa create ocm-role', resulting in a 403 CLUSTERS-MGMT-403 error when attempting to create the ROSA HCP cluster.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T18:53:33.353534",
+    "issue_type": "vpc_deletion_failure",
+    "recommended_fix": "retry_cloudformation_delete",
+    "success": false,
+    "confidence_used": 0.85,
+    "root_cause": "The ROSANetwork CloudFormation stack deletion is repeatedly failing \u2014 the controller has been retrying deletion of the 'rosa-vpc' stack for over 8 minutes with each reconcile loop returning 'CF stack deletion failed', indicating orphaned AWS resources (likely ENIs, security groups, or VPC endpoints created outside CloudFormation) are blocking the VPC from being deleted.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T19:00:57.729238",
+    "issue_type": "vpc_deletion_failure",
+    "recommended_fix": "retry_cloudformation_delete",
+    "success": false,
+    "confidence_used": 0.82,
+    "root_cause": "The AWS CloudFormation stack backing the ROSANetwork 'rosa-vpc' in namespace 'ns-rosa-hcp' is repeatedly failing to delete, most likely because orphaned VPC dependencies (e.g., ENIs, security groups, or VPC endpoints created by ROSA outside of CloudFormation) are blocking stack teardown.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T19:21:24.859847",
+    "issue_type": "ocm_auth_failure",
+    "recommended_fix": "refresh_ocm_token",
+    "success": true,
+    "confidence_used": 0.97,
+    "root_cause": "The OCM organization '12345abcdef' is not authorized to access AWS account '12345678901' because the 'ocm-role' IAM role has never been created via 'rosa create ocm-role', breaking the trust link between the OCM org and the AWS account.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T19:23:43.762078",
+    "issue_type": "ocm_auth_failure",
+    "recommended_fix": "refresh_ocm_token",
+    "success": true,
+    "confidence_used": 0.98,
+    "root_cause": "The OCM organization '12345abcdef' is not authorized to access AWS Account '12345678901' because the 'ocm-role' IAM role has never been created; OCM returns HTTP 403 CLUSTERS-MGMT-403 on every cluster creation attempt.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T19:24:55.731034",
+    "issue_type": "vpc_deletion_failure",
+    "recommended_fix": "retry_cloudformation_delete",
+    "success": true,
+    "confidence_used": 0.87,
+    "root_cause": "The AWS CloudFormation stack deletion is failing repeatedly during ROSANetwork teardown for the 'rosa-vpc' resource in namespace 'ns-rosa-hcp', most likely because orphaned VPC dependencies (such as security groups, ENIs, or VPC endpoints created outside the CF stack by ROSA) are blocking the stack from being deleted.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T19:35:29.729477",
+    "issue_type": "ocm_auth_failure",
+    "recommended_fix": "refresh_ocm_token",
+    "success": true,
+    "confidence_used": 0.98,
+    "root_cause": "The OCM organization ('12345abcdef') is not authorized to access AWS Account '12345678901' because the 'ocm-role' IAM role has never been created; the OCM cluster creation call returns HTTP 403 with code 'CLUSTERS-MGMT-403' instructing an administrator to run 'rosa create ocm-role' first.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T19:37:48.613244",
+    "issue_type": "ocm_auth_failure",
+    "recommended_fix": "refresh_ocm_token",
+    "success": true,
+    "confidence_used": 0.98,
+    "root_cause": "The OCM organization '12345abcdef' is not authorized to access AWS Account '12345678901' because the required 'ocm-role' IAM role has never been created via 'rosa create ocm-role', preventing cluster creation with a 403 CLUSTERS-MGMT-403 error.",
+    "resource_key": "unknown",
+    "details": ""
+  },
+  {
+    "timestamp": "2026-05-04T19:38:44.540584",
+    "issue_type": "vpc_deletion_failure",
+    "recommended_fix": "retry_cloudformation_delete",
+    "success": false,
+    "confidence_used": 0.85,
+    "root_cause": "The AWS CloudFormation stack deletion is failing repeatedly during ROSANetwork teardown, most likely because orphaned VPC dependencies (such as ENIs, security groups, or VPC endpoints created by ROSA outside of CloudFormation) are blocking the stack and VPC from being deleted.",
+    "resource_key": "unknown",
+    "details": ""
+  }
+]
