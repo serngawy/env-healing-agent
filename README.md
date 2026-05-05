@@ -7,7 +7,6 @@ Designed to run alongside any workload: infrastructure provisioning, CI/CD pipel
 ## Contents
 
 - [How it works](#how-it-works)
-- [Architecture](#architecture)
 - [Log Streams](#log-streams)
 - [Runner Adapters](#runner-adapters)
 - [CLI Usage](#cli-usage)
@@ -42,59 +41,6 @@ Learning Agent  ── record outcome, adjust pattern confidence scores
 
 The agent never crashes the workload it monitors. All agent errors are caught internally. Pass `--dry-run` to detect and diagnose without executing any fixes.
 
----
-
-## Architecture
-
-```
-env-healing-agent/
-├── Dockerfile                      # Container image build
-├── requirements.txt                # Python dependencies
-├── Makefile                        # build / push / deploy targets
-├── cli.py                          # CLI entry point
-├── core/
-│   ├── event.py                    # LogLine, Issue, Diagnosis dataclasses
-│   ├── base_agent.py               # Shared agent foundation
-│   └── pipeline.py                 # Orchestrator — multiplexes N streams, runs agent chain
-├── log_streams/                    # Pluggable log sources
-│   ├── base_stream.py              # Abstract interface
-│   ├── stdout_stream.py            # Subprocess stdout/stderr
-│   ├── file_stream.py              # File tail (background thread)
-│   ├── k8s_stream.py               # Kubernetes SDK (in-pod) or kubectl subprocess (outside)
-│   ├── pipe_stream.py              # stdin pipe / pre-recorded logs
-│   ├── cloudwatch_stream.py        # AWS CloudWatch Logs
-│   └── journald_stream.py          # systemd journald
-├── frameworks/                     # Runner adapters — wrap the process being monitored
-│   ├── base_framework.py           # Abstract interface
-│   ├── ansible_framework.py        # ansible-playbook
-│   ├── pytest_framework.py         # pytest (example: test environment provisioning checks)
-│   ├── shell_framework.py          # bash/sh scripts
-│   └── generic_framework.py        # Any subprocess or stdin pipe
-├── monitoring/monitoring_agent.py  # Real-time pattern detection
-├── diagnostic/
-│   ├── diagnostic_agent.py         # Root cause analysis (Claude AI primary, built-in fallback)
-│   └── claude_client.py            # Anthropic API client — sends error windows, returns diagnosis
-├── remediation/remediation_agent.py# Fix execution (data-driven, reads fix_strategies.json)
-├── learning/learning_agent.py      # Outcome tracking & confidence tuning
-├── knowledge_base/
-│   ├── known_issues.json           # Issue patterns — single source of truth, auto-updated at runtime
-│   ├── fix_strategies.json         # Machine-executable fix strategies
-│   └── remediation_outcomes.json   # Append-only outcome history
-└── deploy/                         # Kubernetes manifests
-    ├── configmap.yaml              # Namespace + knowledge-base ConfigMaps (multi-chunk)
-    ├── rbac.yaml                   # ServiceAccount, ClusterRole, ClusterRoleBinding
-    ├── deployment.yaml             # Default deployment (KubernetesLogStream mode)
-    ├── service.yaml                # ClusterIP service
-    └── examples/                   # One self-contained manifest per log stream type
-        ├── k8s-stream-deployment.yaml
-        ├── file-tail-stream-deployment.yaml
-        ├── cloudwatch-stream-deployment.yaml
-        ├── stdout-stream-job.yaml
-        ├── pipe-stream-deployment.yaml
-        └── journald-stream-deployment.yaml
-```
-
----
 
 ## Log Streams
 
@@ -567,14 +513,20 @@ Used when `ANTHROPIC_VERTEX_PROJECT_ID` / `CLOUD_ML_REGION` are absent or the `a
 # Standalone — Google Cloud ADC handles authentication automatically
 export ANTHROPIC_VERTEX_PROJECT_ID=my-gcp-project
 export CLOUD_ML_REGION=us-east5
+export GOOGLE_APPLICATION_CREDENTIALS=~/keys/sa-key.json
 python -m env_healing_agent.cli ansible playbooks/provision.yml
 
-# Kubernetes — create the Secret then deploy
-oc create secret generic env-healing-agent-vertex \
-  --from-literal=project-id=my-gcp-project \
-  --from-literal=region=us-east5 \
-  -n env-healing-agent
-# or use: ANTHROPIC_VERTEX_PROJECT_ID=my-gcp-project CLOUD_ML_REGION=us-east5 make deploy
+# Kubernetes — use make deploy (handles all secrets automatically)
+make deploy \
+  ANTHROPIC_VERTEX_PROJECT_ID=my-gcp-project \
+  CLOUD_ML_REGION=us-east5 \
+  GCP_SA_KEY_FILE=~/keys/sa-key.json \
+  AWS_CREDENTIALS_FILE=~/.aws/credentials \
+  OCM_API_URL=https://api.openshift.com \
+  OCM_CLIENT_ID=my-client-id \
+  OCM_CLIENT_SECRET=my-client-secret \
+  WATCH_LABEL=cluster.x-k8s.io/provider \
+  WATCH_NAMESPACE="capi-system capa-system"
 ```
 
 ### Remediation Agent
@@ -591,12 +543,12 @@ diagnosis.recommended_fix
 | Fix name | `action_type` | What it does |
 |---|---|---|
 | `backoff_and_retry` | `advisory` | Log recommended wait time — non-blocking |
-| `refresh_ocm_token` | `advisory` | Flag for manual operator action |
+| `refresh_ocm_token` | `cli_sequence` | `rosa login` with client credentials then `rosa create ocm-role --mode auto` |
 | `log_and_continue` | `advisory` | Log and return success |
 | `manual_cloudformation_cleanup` | `advisory` | Flag stack for operator review |
 | `increase_timeout_and_monitor` | `advisory` | Suggest timeout increase |
 | `install_capi_capa` | `cli_sequence` | Verify CAPI/CAPA controller deployments |
-| `retry_cloudformation_delete` | `cli_sequence` | Multi-phase VPC cleanup → CF stack retry |
+| `retry_cloudformation_delete` | `cli_sequence` | Resolve stack params from ROSANetwork CR, delete VPC endpoints/ENIs/SGs, retry CF stack deletion |
 | `cleanup_vpc_dependencies` | `cli_sequence` | Per-resource ENI/SG detach and delete |
 
 Dry-run mode returns `(True, "DRY RUN: ...")` without executing any commands.
@@ -644,26 +596,54 @@ make push IMAGE_REGISTRY=quay.io/myorg IMAGE_NAME=env-healing-agent IMAGE_TAG=v1
 
 ### Apply order
 
+Use `make deploy` — it creates all required secrets and applies all manifests in the correct order:
+
 ```bash
-# 1. Claude AI credentials (Vertex AI — no API key needed, uses GCP ADC)
-oc create secret generic env-healing-agent-vertex \
-  --from-literal=project-id=<GCP_PROJECT_ID> \
-  --from-literal=region=<GCP_REGION> \
-  -n env-healing-agent
+make deploy \
+  ANTHROPIC_VERTEX_PROJECT_ID=<GCP_PROJECT_ID> \
+  CLOUD_ML_REGION=<GCP_REGION> \
+  GCP_SA_KEY_FILE=~/keys/sa-key.json \
+  AWS_CREDENTIALS_FILE=~/.aws/credentials \
+  OCM_API_URL=https://api.openshift.com \
+  OCM_CLIENT_ID=<OCM_CLIENT_ID> \
+  OCM_CLIENT_SECRET=<OCM_CLIENT_SECRET> \
+  WATCH_LABEL=cluster.x-k8s.io/provider \
+  WATCH_NAMESPACE="capi-system capa-system"
+```
 
-# 2. AWS credentials (for remediation fix strategies)
-oc create secret generic env-healing-agent-aws-credentials \
-  --from-literal=access-key-id=<KEY> \
-  --from-literal=secret-access-key=<SECRET> \
-  --from-literal=region=us-east-1 \
-  -n env-healing-agent
+This creates the following secrets in `env-healing-agent-ns`:
 
-# 3. Base manifests — or use: ANTHROPIC_VERTEX_PROJECT_ID=<project> CLOUD_ML_REGION=<region> make deploy
+| Secret | Contents |
+|---|---|
+| `env-healing-agent-gcp-sa` | GCP service account key JSON — mounted at `/gcp/sa-key.json`; sets `GOOGLE_APPLICATION_CREDENTIALS` for Vertex AI ADC |
+| `env-healing-agent-aws-credentials` | AWS credentials file — mounted at `/root/.aws/credentials` |
+| `env-healing-agent-ocm-credentials` | `OCM_API_URL`, `OCM_CLIENT_ID`, `OCM_CLIENT_SECRET` — used by the `refresh_ocm_token` fix strategy |
+
+To apply manifests manually without `make deploy`:
+
+```bash
 oc apply -f deploy/configmap.yaml
 oc apply -f deploy/rbac.yaml
 oc apply -f deploy/deployment.yaml
 oc apply -f deploy/service.yaml
 ```
+
+### Makefile variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `ANTHROPIC_VERTEX_PROJECT_ID` | Yes | — | GCP project ID with Vertex AI / Claude enabled |
+| `CLOUD_ML_REGION` | Yes | — | GCP region (e.g. `us-east5`) |
+| `GCP_SA_KEY_FILE` | Yes | — | Path to GCP service account key JSON file |
+| `AWS_CREDENTIALS_FILE` | Yes | — | Path to AWS credentials file (`~/.aws/credentials` format) |
+| `OCM_API_URL` | Yes | — | OCM API endpoint (e.g. `https://api.openshift.com`) |
+| `OCM_CLIENT_ID` | Yes | — | OCM service account client ID |
+| `OCM_CLIENT_SECRET` | Yes | — | OCM service account client secret |
+| `WATCH_LABEL` | No | `app=test-env` | Pod label selector to stream logs from |
+| `WATCH_NAMESPACE` | No | `default kube-system` | Space-separated list of namespaces to watch — up to 4, or `"*"` for all |
+| `IMAGE_REGISTRY` | No | `quay.io/melserng` | Container image registry |
+| `IMAGE_NAME` | No | `env-healing-agent` | Container image name |
+| `IMAGE_TAG` | No | `latest` | Container image tag |
 
 ### Knowledge base as ConfigMaps
 
@@ -678,6 +658,23 @@ The knowledge base is stored in numbered ConfigMaps so it can be updated without
 | `env-healing-agent-init-script` | Python merge script |
 
 To add a new chunk: create the ConfigMap, add a `volume` + `volumeMount` in `deployment.yaml` at the next numbered path (`/cms/<type>/N`), then `oc apply`. No script changes needed.
+
+The agent patches these ConfigMaps at runtime when it persists new knowledge. The target ConfigMap names are controlled by env vars in `deployment.yaml`:
+
+| Env var | Default value |
+|---|---|
+| `KNOWN_ISSUES_CONFIGMAP` | `env-healing-agent-known-issues-1` |
+| `FIX_STRATEGIES_CONFIGMAP` | `env-healing-agent-fix-strategies-1` |
+| `REMEDIATION_OUTCOMES_CONFIGMAP` | `env-healing-agent-remediation-outcomes-1` |
+
+### RBAC
+
+`rbac.yaml` grants the agent a `ClusterRole` with read access to:
+- Core Kubernetes resources: `pods`, `pods/log`, `events`, `namespaces`, `configmaps`
+- CAPI/CAPA resources: `clusters`, `machinepools`, `machinedeployments`
+- ROSA CRDs: `rosanetworks`, `rosaroleconfigs`, `rosamachinepools`, `rosaclusters`
+
+Patch access on `configmaps` is also granted so the agent can persist updated knowledge base chunks at runtime.
 
 ### Deployment examples
 
