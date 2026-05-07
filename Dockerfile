@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.source="https://github.com/serngawy/rosa-hcp-e2e-test" \
+LABEL org.opencontainers.image.source="https://github.com/serngawy/env-healing-agent" \
       org.opencontainers.image.description="env-healing-agent — framework-agnostic self-healing test agent"
 
 # Tools used by remediation shell steps and log streams
