@@ -79,6 +79,10 @@ spec:
             - "$(WATCH_NAMESPACE_2)"
             - "--verbose"
           env:
+            # Set to "true" to allow the remediation agent to apply fixes.
+            # When "false" (default) issues are detected and diagnosed but no fix is executed.
+            - name: REMEDIATION
+              value: "false"
             - name: WATCH_LABEL
               value: "app=my-service"
             - name: WATCH_NAMESPACE_1

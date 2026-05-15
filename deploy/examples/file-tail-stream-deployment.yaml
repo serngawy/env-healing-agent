@@ -68,6 +68,10 @@ spec:
             - "/host/logs/error.log"
             - "--verbose"
           env:
+            # Set to "true" to allow the remediation agent to apply fixes.
+            # When "false" (default) issues are detected and diagnosed but no fix is executed.
+            - name: REMEDIATION
+              value: "false"
             - name: PYTHONUNBUFFERED
               value: "1"
             - name: ANTHROPIC_VERTEX_PROJECT_ID

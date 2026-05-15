@@ -40,6 +40,7 @@ Usage examples:
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -55,6 +56,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--kb-dir", default=str(_DEFAULT_KB), help="Path to knowledge base directory")
     parser.add_argument("--dry-run", action="store_true", help="Detect issues but do not execute fixes")
+    parser.add_argument(
+        "--enable-remediation",
+        action="store_true",
+        default=False,
+        help="Allow the remediation agent to apply fixes. "
+             "Without this flag (or REMEDIATION=true env var) fixes are detected and diagnosed "
+             "but never executed, even when auto_fix is enabled.",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose agent logging")
     parser.add_argument("--no-echo", action="store_true", help="Suppress echoing log lines to stdout")
     parser.add_argument("--confidence", type=float, default=0.7, help="Minimum confidence threshold (0.0-1.0)")
@@ -198,12 +207,17 @@ def main(argv=None):
             )
         )
 
+    remediation_enabled = args.enable_remediation or (
+        os.environ.get("REMEDIATION", "").lower() in ("true", "1", "yes")
+    )
+    dry_run = args.dry_run or not remediation_enabled
+
     pipeline = AgentPipeline(
         framework=framework,
         kb_dir=kb_dir,
         enabled=True,
         verbose=args.verbose,
-        dry_run=args.dry_run,
+        dry_run=dry_run,
         confidence_threshold=args.confidence,
         echo=not args.no_echo,
         extra_streams=extra_streams,
