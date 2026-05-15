@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-env-healing-agent CLI
+env-healing-agents CLI
 ============
 
 Run the self-healing agent pipeline with any supported test framework.
@@ -48,7 +48,7 @@ _DEFAULT_KB = Path(__file__).parent / "knowledge_base"
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="env-healing-agent",
+        prog="env-healing-agents",
         description="Self-healing test agent — framework-agnostic, multi-stream log monitoring.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,

@@ -12,11 +12,11 @@
 # Prerequisites:
 #   oc apply -f ../configmap.yaml
 #   oc apply -f ../rbac.yaml
-#   oc create secret generic env-healing-agent-aws-credentials \
+#   oc create secret generic env-healing-agents-aws-credentials \
 #     --from-literal=access-key-id=<KEY> \
 #     --from-literal=secret-access-key=<SECRET> \
 #     --from-literal=region=us-east-1 \
-#     -n env-healing-agent-ns
+#     -n env-healing-agents-ns
 #
 # Customise:
 #   CLOUDWATCH_LOG_GROUP — the log group to watch
@@ -27,22 +27,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: env-healing-agent-cloudwatch
-  namespace: env-healing-agent-ns
+  name: env-healing-agents-cloudwatch
+  namespace: env-healing-agents-ns
   labels:
-    app: env-healing-agent-cloudwatch
+    app: env-healing-agents-cloudwatch
     stream-type: cloudwatch
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: env-healing-agent-cloudwatch
+      app: env-healing-agents-cloudwatch
   template:
     metadata:
       labels:
-        app: env-healing-agent-cloudwatch
+        app: env-healing-agents-cloudwatch
     spec:
-      serviceAccountName: env-healing-agent
+      serviceAccountName: env-healing-agents
 
       initContainers:
         - name: merge-knowledge-base
@@ -63,8 +63,8 @@ spec:
               mountPath: /cms/remediation-outcomes/1
 
       containers:
-        - name: env-healing-agent
-          image: quay.io/melserng/env-healing-agent:latest
+        - name: env-healing-agents
+          image: quay.io/melserng/env-healing-agents:latest
           imagePullPolicy: Always
           command: ["python", "-m", "env_healing_agent.cli"]
           args:
@@ -96,28 +96,28 @@ spec:
             - name: ANTHROPIC_VERTEX_PROJECT_ID
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-vertex
+                  name: env-healing-agents-vertex
                   key: project-id
             - name: CLOUD_ML_REGION
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-vertex
+                  name: env-healing-agents-vertex
                   key: region
             # AWS credentials for boto3
             - name: AWS_DEFAULT_REGION
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-aws-credentials
+                  name: env-healing-agents-aws-credentials
                   key: region
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-aws-credentials
+                  name: env-healing-agents-aws-credentials
                   key: access-key-id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-aws-credentials
+                  name: env-healing-agents-aws-credentials
                   key: secret-access-key
             # --- IRSA alternative (comment out the Secret env vars above) ---
             # - name: AWS_ROLE_ARN
@@ -145,16 +145,16 @@ spec:
           emptyDir: {}
         - name: init-script
           configMap:
-            name: env-healing-agent-init-script
+            name: env-healing-agents-init-script
         - name: known-issues-1
           configMap:
-            name: env-healing-agent-known-issues-1
+            name: env-healing-agents-known-issues-1
         - name: known-issues-2
           configMap:
-            name: env-healing-agent-known-issues-2
+            name: env-healing-agents-known-issues-2
         - name: fix-strategies-1
           configMap:
-            name: env-healing-agent-fix-strategies-1
+            name: env-healing-agents-fix-strategies-1
         - name: remediation-outcomes-1
           configMap:
-            name: env-healing-agent-remediation-outcomes-1
+            name: env-healing-agents-remediation-outcomes-1

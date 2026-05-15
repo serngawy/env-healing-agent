@@ -1,5 +1,5 @@
 """
-Remediation env-healing-agent
+Remediation env-healing-agents
 ====================
 
 Pure data-driven remediation dispatcher. Reads all fix strategies from

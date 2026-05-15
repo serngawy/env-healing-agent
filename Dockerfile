@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.source="https://github.com/serngawy/env-healing-agent" \
-      org.opencontainers.image.description="env-healing-agent — framework-agnostic self-healing test agent"
+LABEL org.opencontainers.image.source="https://github.com/serngawy/env-healing-agents" \
+      org.opencontainers.image.description="env-healing-agents — framework-agnostic self-healing test agent"
 
 # Tools used by remediation shell steps and log streams
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,7 +34,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the package. Build context is the env-healing-agent/ directory; the destination
+# Copy the package. Build context is the env-healing-agents/ directory; the destination
 # name env_healing_agent matches the Python import name (directory name uses a hyphen
 # which is not valid in import paths).
 COPY . /app/env_healing_agent/

@@ -1,4 +1,4 @@
-# env-healing-agent — Developer Reference
+# env-healing-agents — Developer Reference
 
 - [Log Streams](#log-streams)
 - [Runner Adapters](#runner-adapters)

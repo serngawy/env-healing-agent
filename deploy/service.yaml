@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: env-healing-agent
-  namespace: env-healing-agent-ns
+  name: env-healing-agents
+  namespace: env-healing-agents-ns
   labels:
-    app: env-healing-agent
+    app: env-healing-agents
 spec:
   type: ClusterIP
   selector:
-    app: env-healing-agent
+    app: env-healing-agents
   ports:
     - name: metrics
       port: 8080

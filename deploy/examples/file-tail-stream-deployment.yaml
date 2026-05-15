@@ -15,22 +15,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: env-healing-agent-file-tail
-  namespace: env-healing-agent-ns
+  name: env-healing-agents-file-tail
+  namespace: env-healing-agents-ns
   labels:
-    app: env-healing-agent-file-tail
+    app: env-healing-agents-file-tail
     stream-type: file-tail
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: env-healing-agent-file-tail
+      app: env-healing-agents-file-tail
   template:
     metadata:
       labels:
-        app: env-healing-agent-file-tail
+        app: env-healing-agents-file-tail
     spec:
-      serviceAccountName: env-healing-agent
+      serviceAccountName: env-healing-agents
 
       initContainers:
         - name: merge-knowledge-base
@@ -51,8 +51,8 @@ spec:
               mountPath: /cms/remediation-outcomes/1
 
       containers:
-        - name: env-healing-agent
-          image: quay.io/melserng/env-healing-agent:latest
+        - name: env-healing-agents
+          image: quay.io/melserng/env-healing-agents:latest
           imagePullPolicy: Always
           command: ["python", "-m", "env_healing_agent.cli"]
           args:
@@ -73,12 +73,12 @@ spec:
             - name: ANTHROPIC_VERTEX_PROJECT_ID
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-vertex
+                  name: env-healing-agents-vertex
                   key: project-id
             - name: CLOUD_ML_REGION
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-vertex
+                  name: env-healing-agents-vertex
                   key: region
           volumeMounts:
             - name: knowledge-base
@@ -105,19 +105,19 @@ spec:
           emptyDir: {}
         - name: init-script
           configMap:
-            name: env-healing-agent-init-script
+            name: env-healing-agents-init-script
         - name: known-issues-1
           configMap:
-            name: env-healing-agent-known-issues-1
+            name: env-healing-agents-known-issues-1
         - name: known-issues-2
           configMap:
-            name: env-healing-agent-known-issues-2
+            name: env-healing-agents-known-issues-2
         - name: fix-strategies-1
           configMap:
-            name: env-healing-agent-fix-strategies-1
+            name: env-healing-agents-fix-strategies-1
         - name: remediation-outcomes-1
           configMap:
-            name: env-healing-agent-remediation-outcomes-1
+            name: env-healing-agents-remediation-outcomes-1
         # Mount the host log directory. Change path to your actual log location.
         - name: host-logs
           hostPath:

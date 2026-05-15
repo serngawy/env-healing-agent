@@ -19,7 +19,7 @@ Usage:
 
     pipeline = AgentPipeline(
         framework=AnsibleFramework("playbooks/create_rosa_hcp_cluster.yml"),
-        kb_dir=Path("env-healing-agent/knowledge_base"),
+        kb_dir=Path("env-healing-agents/knowledge_base"),
         enabled=True,
     )
     pipeline.run()

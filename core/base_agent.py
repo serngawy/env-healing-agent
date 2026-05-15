@@ -94,7 +94,7 @@ class BaseAgent:
         """Patch the source ConfigMap so runtime knowledge changes survive pod restarts."""
         if not configmap_name:
             return
-        namespace = os.environ.get("POD_NAMESPACE", "env-healing-agent-ns")
+        namespace = os.environ.get("POD_NAMESPACE", "env-healing-agents-ns")
         try:
             from kubernetes import client, config as k8s_config
             try:

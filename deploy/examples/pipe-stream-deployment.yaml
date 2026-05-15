@@ -1,7 +1,7 @@
 # PipeStream — read log lines fed into stdin from a sidecar process
 #
 # Scenario: A test-runner sidecar writes its output to a named pipe (FIFO)
-# in a shared emptyDir volume. The env-healing-agent container reads from that FIFO
+# in a shared emptyDir volume. The env-healing-agents container reads from that FIFO
 # via stdin (pipe subcommand). Both containers start together; the agent
 # monitors every line the runner produces, in real time.
 #
@@ -21,22 +21,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: env-healing-agent-pipe
-  namespace: env-healing-agent-ns
+  name: env-healing-agents-pipe
+  namespace: env-healing-agents-ns
   labels:
-    app: env-healing-agent-pipe
+    app: env-healing-agents-pipe
     stream-type: pipe
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: env-healing-agent-pipe
+      app: env-healing-agents-pipe
   template:
     metadata:
       labels:
-        app: env-healing-agent-pipe
+        app: env-healing-agents-pipe
     spec:
-      serviceAccountName: env-healing-agent
+      serviceAccountName: env-healing-agents
 
       # Create the FIFO before either container starts so both can open it.
       initContainers:
@@ -81,8 +81,8 @@ spec:
         # ----------------------------------------------------------------
         # Agent: reads from the FIFO via stdin (pipe subcommand).
         # ----------------------------------------------------------------
-        - name: env-healing-agent
-          image: quay.io/melserng/env-healing-agent:latest
+        - name: env-healing-agents
+          image: quay.io/melserng/env-healing-agents:latest
           imagePullPolicy: Always
           # The shell redirect feeds the FIFO into the agent's stdin.
           command: ["/bin/sh", "-c"]
@@ -99,12 +99,12 @@ spec:
             - name: ANTHROPIC_VERTEX_PROJECT_ID
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-vertex
+                  name: env-healing-agents-vertex
                   key: project-id
             - name: CLOUD_ML_REGION
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-vertex
+                  name: env-healing-agents-vertex
                   key: region
           volumeMounts:
             - name: knowledge-base
@@ -131,16 +131,16 @@ spec:
           emptyDir: {}         # tmpfs — FIFO lives in memory, no disk I/O
         - name: init-script
           configMap:
-            name: env-healing-agent-init-script
+            name: env-healing-agents-init-script
         - name: known-issues-1
           configMap:
-            name: env-healing-agent-known-issues-1
+            name: env-healing-agents-known-issues-1
         - name: known-issues-2
           configMap:
-            name: env-healing-agent-known-issues-2
+            name: env-healing-agents-known-issues-2
         - name: fix-strategies-1
           configMap:
-            name: env-healing-agent-fix-strategies-1
+            name: env-healing-agents-fix-strategies-1
         - name: remediation-outcomes-1
           configMap:
-            name: env-healing-agent-remediation-outcomes-1
+            name: env-healing-agents-remediation-outcomes-1

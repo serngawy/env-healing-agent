@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: env-healing-agent
-  namespace: env-healing-agent-ns
+  name: env-healing-agents
+  namespace: env-healing-agents-ns
   labels:
-    app: env-healing-agent
+    app: env-healing-agents
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: env-healing-agent
+      app: env-healing-agents
   template:
     metadata:
       labels:
-        app: env-healing-agent
+        app: env-healing-agents
     spec:
-      serviceAccountName: env-healing-agent
+      serviceAccountName: env-healing-agents
 
       # -----------------------------------------------------------------------
       # Init container: merge all ConfigMap chunks into a single emptyDir.
       #
       # To add a new chunk for any JSON file:
-      #   1. Create the new ConfigMap (e.g. env-healing-agent-known-issues-3).
+      #   1. Create the new ConfigMap (e.g. env-healing-agents-known-issues-3).
       #   2. Add a volume below referencing it.
       #   3. Add a volumeMount to this init container at the next numbered path
       #      (e.g. /cms/known-issues/3).
@@ -54,10 +54,10 @@ spec:
       # Main container
       # -----------------------------------------------------------------------
       containers:
-        - name: env-healing-agent
-          # Build: docker build -t env-healing-agent:latest env-healing-agent/
+        - name: env-healing-agents
+          # Build: docker build -t env-healing-agents:latest env-healing-agents/
           # Push to your registry then update this field.
-          image: quay.io/melserng/env-healing-agent:latest
+          image: quay.io/melserng/env-healing-agents:latest
           imagePullPolicy: Always
 
           # Run in generic mode with a no-op main process.
@@ -112,20 +112,20 @@ spec:
                   fieldPath: metadata.namespace
             # ConfigMap names the agent will patch when it persists new knowledge at runtime
             - name: KNOWN_ISSUES_CONFIGMAP
-              value: "env-healing-agent-known-issues-1"
+              value: "env-healing-agents-known-issues-1"
             - name: FIX_STRATEGIES_CONFIGMAP
-              value: "env-healing-agent-fix-strategies-1"
+              value: "env-healing-agents-fix-strategies-1"
             - name: REMEDIATION_OUTCOMES_CONFIGMAP
-              value: "env-healing-agent-remediation-outcomes-1"
+              value: "env-healing-agents-remediation-outcomes-1"
             - name: ANTHROPIC_VERTEX_PROJECT_ID
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-vertex
+                  name: env-healing-agents-vertex
                   key: project-id
             - name: CLOUD_ML_REGION
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-vertex
+                  name: env-healing-agents-vertex
                   key: region
             # AWS credentials file mounted from secret
             - name: AWS_SHARED_CREDENTIALS_FILE
@@ -134,17 +134,17 @@ spec:
             - name: OCM_API_URL
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-ocm-credentials
+                  name: env-healing-agents-ocm-credentials
                   key: ocmApiUrl
             - name: OCM_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-ocm-credentials
+                  name: env-healing-agents-ocm-credentials
                   key: ocmClientID
             - name: OCM_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: env-healing-agent-ocm-credentials
+                  name: env-healing-agents-ocm-credentials
                   key: ocmClientSecret
             # GCP Service Account key for Vertex AI authentication
             - name: GOOGLE_APPLICATION_CREDENTIALS
@@ -203,35 +203,35 @@ spec:
         # Merge script
         - name: init-script
           configMap:
-            name: env-healing-agent-init-script
+            name: env-healing-agents-init-script
 
         # known_issues chunks — add more here as the file grows
         - name: known-issues-1
           configMap:
-            name: env-healing-agent-known-issues-1
+            name: env-healing-agents-known-issues-1
         - name: known-issues-2
           configMap:
-            name: env-healing-agent-known-issues-2
+            name: env-healing-agents-known-issues-2
 
         # fix_strategies chunks
         - name: fix-strategies-1
           configMap:
-            name: env-healing-agent-fix-strategies-1
+            name: env-healing-agents-fix-strategies-1
 
         # remediation_outcomes chunks
         - name: remediation-outcomes-1
           configMap:
-            name: env-healing-agent-remediation-outcomes-1
+            name: env-healing-agents-remediation-outcomes-1
 
         # GCP Service Account key for Vertex AI authentication
         - name: gcp-sa
           secret:
-            secretName: env-healing-agent-gcp-sa
+            secretName: env-healing-agents-gcp-sa
 
         # AWS credentials file
         - name: aws-credentials
           secret:
-            secretName: env-healing-agent-aws-credentials
+            secretName: env-healing-agents-aws-credentials
 
         # -----------------------------------------------------------------------
         # Optional: FileTailStream — mount a host log file or emptyDir log path.

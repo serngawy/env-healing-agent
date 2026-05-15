@@ -1,4 +1,4 @@
-# env-healing-agent
+# env-healing-agents
 
 An autonomous agent that monitors any running environment, detects known issues in real time, diagnoses root causes using Claude AI, and applies fixes automatically — all without human intervention.
 
@@ -283,14 +283,14 @@ Dry-run mode returns `(True, "DRY RUN: ...")` without executing any commands.
 ## Container Image
 
 ```bash
-# Build  (default image: quay.io/melserng/env-healing-agent:latest)
+# Build  (default image: quay.io/melserng/env-healing-agents:latest)
 make build
 
 # Build and push
 make push
 
 # Override coordinates
-make push IMAGE_REGISTRY=quay.io/myorg IMAGE_NAME=env-healing-agent IMAGE_TAG=v1.0.0
+make push IMAGE_REGISTRY=quay.io/myorg IMAGE_NAME=env-healing-agents IMAGE_TAG=v1.0.0
 ```
 
 ### Image contents
@@ -328,13 +328,13 @@ make deploy \
   WATCH_NAMESPACE="capi-system capa-system"
 ```
 
-This creates the following secrets in `env-healing-agent-ns`:
+This creates the following secrets in `env-healing-agents-ns`:
 
 | Secret | Contents |
 |---|---|
-| `env-healing-agent-gcp-sa` | GCP service account key JSON — mounted at `/gcp/sa-key.json`; sets `GOOGLE_APPLICATION_CREDENTIALS` for Vertex AI ADC |
-| `env-healing-agent-aws-credentials` | AWS credentials file — mounted at `/root/.aws/credentials` |
-| `env-healing-agent-ocm-credentials` | `OCM_API_URL`, `OCM_CLIENT_ID`, `OCM_CLIENT_SECRET` — used by the `refresh_ocm_token` fix strategy |
+| `env-healing-agents-gcp-sa` | GCP service account key JSON — mounted at `/gcp/sa-key.json`; sets `GOOGLE_APPLICATION_CREDENTIALS` for Vertex AI ADC |
+| `env-healing-agents-aws-credentials` | AWS credentials file — mounted at `/root/.aws/credentials` |
+| `env-healing-agents-ocm-credentials` | `OCM_API_URL`, `OCM_CLIENT_ID`, `OCM_CLIENT_SECRET` — used by the `refresh_ocm_token` fix strategy |
 
 To apply manifests manually without `make deploy`:
 
@@ -359,7 +359,7 @@ oc apply -f deploy/service.yaml
 | `WATCH_LABEL` | No | `app=test-env` | Pod label selector to stream logs from |
 | `WATCH_NAMESPACE` | No | `default kube-system` | Space-separated list of namespaces to watch — up to 4, or `"*"` for all |
 | `IMAGE_REGISTRY` | No | `quay.io/melserng` | Container image registry |
-| `IMAGE_NAME` | No | `env-healing-agent` | Container image name |
+| `IMAGE_NAME` | No | `env-healing-agents` | Container image name |
 | `IMAGE_TAG` | No | `latest` | Container image tag |
 
 ### Knowledge base as ConfigMaps
@@ -368,11 +368,11 @@ The knowledge base is stored in numbered ConfigMaps so it can be updated without
 
 | ConfigMap | Content |
 |---|---|
-| `env-healing-agent-known-issues-1` | Issue patterns 1–6 |
-| `env-healing-agent-known-issues-2` | Issue patterns 7–12 |
-| `env-healing-agent-fix-strategies-1` | All fix strategies |
-| `env-healing-agent-remediation-outcomes-1` | Empty on first deploy |
-| `env-healing-agent-init-script` | Python merge script |
+| `env-healing-agents-known-issues-1` | Issue patterns 1–6 |
+| `env-healing-agents-known-issues-2` | Issue patterns 7–12 |
+| `env-healing-agents-fix-strategies-1` | All fix strategies |
+| `env-healing-agents-remediation-outcomes-1` | Empty on first deploy |
+| `env-healing-agents-init-script` | Python merge script |
 
 To add a new chunk: create the ConfigMap, add a `volume` + `volumeMount` in `deployment.yaml` at the next numbered path (`/cms/<type>/N`), then `oc apply`. No script changes needed.
 
@@ -380,9 +380,9 @@ The agent patches these ConfigMaps at runtime when it persists new knowledge. Th
 
 | Env var | Default value |
 |---|---|
-| `KNOWN_ISSUES_CONFIGMAP` | `env-healing-agent-known-issues-1` |
-| `FIX_STRATEGIES_CONFIGMAP` | `env-healing-agent-fix-strategies-1` |
-| `REMEDIATION_OUTCOMES_CONFIGMAP` | `env-healing-agent-remediation-outcomes-1` |
+| `KNOWN_ISSUES_CONFIGMAP` | `env-healing-agents-known-issues-1` |
+| `FIX_STRATEGIES_CONFIGMAP` | `env-healing-agents-fix-strategies-1` |
+| `REMEDIATION_OUTCOMES_CONFIGMAP` | `env-healing-agents-remediation-outcomes-1` |
 
 ### RBAC
 

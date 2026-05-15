@@ -1,17 +1,17 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: env-healing-agent
-  namespace: env-healing-agent-ns
+  name: env-healing-agents
+  namespace: env-healing-agents-ns
   labels:
-    app: env-healing-agent
+    app: env-healing-agents
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: env-healing-agent
+  name: env-healing-agents
   labels:
-    app: env-healing-agent
+    app: env-healing-agents
 rules:
   # Read pod logs (KubernetesLogStream)
   - apiGroups: [""]
@@ -40,27 +40,27 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: env-healing-agent
+  name: env-healing-agents
   labels:
-    app: env-healing-agent
+    app: env-healing-agents
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: env-healing-agent
+  name: env-healing-agents
 subjects:
   - kind: ServiceAccount
-    name: env-healing-agent
-    namespace: env-healing-agent-ns
+    name: env-healing-agents
+    namespace: env-healing-agents-ns
 ---
 # Namespace-scoped Role: allows the agent to patch its own knowledge-base ConfigMaps
 # so that patterns and fix strategies discovered at runtime survive pod restarts.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: env-healing-agent-configmap-writer
-  namespace: env-healing-agent-ns
+  name: env-healing-agents-configmap-writer
+  namespace: env-healing-agents-ns
   labels:
-    app: env-healing-agent
+    app: env-healing-agents
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -69,15 +69,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: env-healing-agent-configmap-writer
-  namespace: env-healing-agent-ns
+  name: env-healing-agents-configmap-writer
+  namespace: env-healing-agents-ns
   labels:
-    app: env-healing-agent
+    app: env-healing-agents
 subjects:
   - kind: ServiceAccount
-    name: env-healing-agent
-    namespace: env-healing-agent-ns
+    name: env-healing-agents
+    namespace: env-healing-agents-ns
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: env-healing-agent-configmap-writer
+  name: env-healing-agents-configmap-writer

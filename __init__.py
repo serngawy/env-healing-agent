@@ -1,5 +1,5 @@
 """
-env-healing-agent — Framework-agnostic self-healing test agent.
+env-healing-agents — Framework-agnostic self-healing test agent.
 
 Quick start:
 

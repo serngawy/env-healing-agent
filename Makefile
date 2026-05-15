@@ -1,5 +1,5 @@
 IMAGE_REGISTRY ?= quay.io/melserng
-IMAGE_NAME     ?= env-healing-agent
+IMAGE_NAME     ?= env-healing-agents
 IMAGE_TAG      ?= latest
 IMAGE          := $(IMAGE_REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 
@@ -22,7 +22,7 @@ OCM_API_URL                 ?=
 OCM_CLIENT_ID               ?=
 OCM_CLIENT_SECRET           ?=
 
-# Build context is the env-healing-agent/ directory (this Makefile lives there).
+# Build context is the env-healing-agents/ directory (this Makefile lives there).
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 # Split WATCH_NAMESPACE into indexed variables consumed by the deploy target.
@@ -87,37 +87,37 @@ deploy:
 	@test -n "$(OCM_CLIENT_ID)"               || (echo "ERROR: OCM_CLIENT_ID is not set" && exit 1)
 	@test -n "$(OCM_CLIENT_SECRET)"           || (echo "ERROR: OCM_CLIENT_SECRET is not set" && exit 1)
 	oc apply -f $(MAKEFILE_DIR)deploy/secrets.yaml
-	oc create secret generic env-healing-agent-vertex \
+	oc create secret generic env-healing-agents-vertex \
 	  --from-literal=project-id=$(ANTHROPIC_VERTEX_PROJECT_ID) \
 	  --from-literal=region=$(CLOUD_ML_REGION) \
-	  -n env-healing-agent-ns \
+	  -n env-healing-agents-ns \
 	  --dry-run=client -o yaml | oc apply -f -
-	oc create secret generic env-healing-agent-gcp-sa \
+	oc create secret generic env-healing-agents-gcp-sa \
 	  --from-file=sa-key.json=$(GCP_SA_KEY_FILE) \
-	  -n env-healing-agent-ns \
+	  -n env-healing-agents-ns \
 	  --dry-run=client -o yaml | oc apply -f -
-	oc create secret generic env-healing-agent-aws-credentials \
+	oc create secret generic env-healing-agents-aws-credentials \
 	  --from-file=credentials=$(AWS_CREDENTIALS_FILE) \
-	  -n env-healing-agent-ns \
+	  -n env-healing-agents-ns \
 	  --dry-run=client -o yaml | oc apply -f -
-	oc create secret generic env-healing-agent-ocm-credentials \
+	oc create secret generic env-healing-agents-ocm-credentials \
 	  --from-literal=ocmApiUrl=$(OCM_API_URL) \
 	  --from-literal=ocmClientID=$(OCM_CLIENT_ID) \
 	  --from-literal=ocmClientSecret=$(OCM_CLIENT_SECRET) \
-	  -n env-healing-agent-ns \
+	  -n env-healing-agents-ns \
 	  --dry-run=client -o yaml | oc apply -f -
 	oc apply -f $(MAKEFILE_DIR)deploy/configmap.yaml
 	oc apply -f $(MAKEFILE_DIR)deploy/rbac.yaml
 	oc apply -f $(MAKEFILE_DIR)deploy/deployment.yaml
 	oc apply -f $(MAKEFILE_DIR)deploy/service.yaml
 	@echo "Configuring watch label and namespaces..."
-	oc set env deployment/env-healing-agent \
+	oc set env deployment/env-healing-agents \
 	  WATCH_LABEL="$(WATCH_LABEL)" \
 	  WATCH_NAMESPACE_1="$(_NS_1)" \
 	  $(if $(_NS_2),WATCH_NAMESPACE_2="$(_NS_2)",) \
 	  $(if $(_NS_3),WATCH_NAMESPACE_3="$(_NS_3)",) \
 	  $(if $(_NS_4),WATCH_NAMESPACE_4="$(_NS_4)",) \
-	  -n env-healing-agent-ns
+	  -n env-healing-agents-ns
 
 undeploy:
 	oc delete -f $(MAKEFILE_DIR)deploy/service.yaml    --ignore-not-found
