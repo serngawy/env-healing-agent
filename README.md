@@ -1,6 +1,6 @@
 # env-healing-agents
 
-An autonomous agent that monitors any running environment, detects known issues in real time, diagnoses root causes using Claude AI, and applies fixes automatically — all without human intervention.
+An autonomous agent that monitors any running environment, detects known issues in real time, diagnoses root causes using an AI model (Claude or Gemini), and applies fixes automatically — all without human intervention.
 
 Designed to run alongside any workload: infrastructure provisioning, CI/CD pipelines, cluster operations, or long-running services. Test environments are a natural first target, but the agent is workload-agnostic.
 
@@ -18,7 +18,7 @@ For log streams, runner adapters, CLI flags, and the Python API see [dev.md](dev
 
 ## How it works
 
-The agent multiplexes any number of log sources into a single pipeline. Every line is matched against known issue patterns. When a match is found, the agent diagnoses the root cause (via Claude AI or built-in methods), executes a fix from a data-driven strategy catalogue, and records the outcome to improve future confidence scores.
+The agent multiplexes any number of log sources into a single pipeline. Every line is matched against known issue patterns. When a match is found, the agent diagnoses the root cause (via Claude or Gemini, or built-in methods), executes a fix from a data-driven strategy catalogue, and records the outcome to improve future confidence scores.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -39,7 +39,8 @@ The agent multiplexes any number of log sources into a single pipeline. Every li
                               ▼
 ┌────────────────────────────────────────────────────────────┐
 │                      DIAGNOSTIC AGENT                      │
-│   Claude AI analysis of error log windows  (±10 lines)     │
+│   AI analysis of error log windows  (±10 lines)            │
+│   Claude (Vertex AI)  ·or·  Gemini (API key)               │
 └────────────────────────────────────────────────────────────┘
                               │
                               │  confidence ≥ threshold (default 0.7)
@@ -182,29 +183,63 @@ Append-only log of every remediation attempt, capped at 500 entries. Read by the
 
 ### Diagnostic Agent
 
-Two paths — Claude AI (primary) and built-in methods (fallback).
+Two paths — AI client (primary) and built-in methods (fallback).
 
-#### Claude AI path (primary)
+#### AI client (primary)
 
-When `ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` are set, the agent uses **Vertex AI** (GCP Application Default Credentials) to call Claude — no API key required. Inside Kubernetes, Workload Identity or the node service account handles authentication automatically.
+The agent supports two AI backends. **Only one may be active at a time.** Select via the `AI_CLIENT` environment variable or the `--ai-client` CLI flag.
 
-Before sending logs to Claude, the captured buffer is filtered to **error-window segments only**:
+| Client | `AI_CLIENT` value | Authentication | Required env vars |
+|---|---|---|---|
+| **Claude** (Anthropic Vertex AI) | `claude` | GCP Application Default Credentials — no API key | `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` |
+| **Gemini** | `gemini` | API key | `GEMINI_API_KEY` |
+
+**Selection rules:**
+- If `AI_CLIENT` is set explicitly, that client is used (error logged if its credentials are missing).
+- If `AI_CLIENT` is not set, the agent auto-detects from whichever credentials are present.
+- If credentials for **both** clients are present but `AI_CLIENT` is not set, the agent logs an error and falls back to built-in methods — the choice must be made explicit.
+
+**CLI flags:**
+
+```bash
+# Use Claude (Vertex AI — credentials come from env vars / Workload Identity)
+python -m env_healing_agent.cli --ai-client claude ansible playbooks/foo.yml
+
+# Use Gemini with an API key
+python -m env_healing_agent.cli --ai-client gemini --gemini-api-key $KEY ansible playbooks/foo.yml
+
+# --gemini-api-key alone implies --ai-client gemini
+python -m env_healing_agent.cli --gemini-api-key $KEY ansible playbooks/foo.yml
+
+# Override the Gemini model (default: gemini-2.0-flash)
+python -m env_healing_agent.cli --gemini-api-key $KEY --gemini-model gemini-1.5-pro ansible playbooks/foo.yml
+```
+
+**Env var equivalents** (useful for container deployments):
+
+| CLI flag | Env var | Default |
+|---|---|---|
+| `--ai-client` | `AI_CLIENT` | *(auto-detect)* |
+| `--gemini-api-key` | `GEMINI_API_KEY` | — |
+| `--gemini-model` | `GEMINI_MODEL` | `gemini-2.0-flash` |
+
+Before sending logs to the AI client, the captured buffer is filtered to **error-window segments only**:
 
 1. Lines matching `error`, `fail`, `failed`, `failing`, `fatal`, `exception`, or `traceback` are identified (case-insensitive).
 2. Each match expands to a window of ±10 lines of context.
 3. Overlapping or adjacent windows are merged into one.
-4. Sections are separated by `--- window N (lines X–Y) ---` markers so Claude can orient itself.
+4. Sections are separated by `--- window N (lines X–Y) ---` markers so the model can orient itself.
 5. If no error lines are found, the last 30 lines are sent as a fallback.
 
 This keeps each API call focused and token-efficient regardless of how verbose the workload output is.
 
-The filtered windows are sent to Claude together with:
+The filtered windows are sent together with:
 
 - The detected issue type
 - Existing patterns from `known_issues.json` (for deduplication)
 - Available fix strategy keys from `fix_strategies.json`
 
-Claude returns a structured diagnosis **and** any new issue patterns it identifies. New patterns are written to `known_issues.json` immediately and used for all subsequent matches in the same session.
+The AI client returns a structured diagnosis **and** any new issue patterns it identifies. New patterns are written to `known_issues.json` immediately and used for all subsequent matches in the same session.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -215,8 +250,8 @@ Claude returns a structured diagnosis **and** any new issue patterns it identifi
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────┐
-│               Claude via Anthropic Vertex AI               │
-│             claude-sonnet-4-6  ·  GCP ADC auth             │
+│          Claude (Vertex AI)  ·or·  Gemini (API key)        │
+│              selected by AI_CLIENT env var                  │
 └────────────────────────────────────────────────────────────┘
                               │
              ┌────────────────┴──────────────┐
@@ -301,7 +336,8 @@ make push IMAGE_REGISTRY=quay.io/myorg IMAGE_NAME=env-healing-agents IMAGE_TAG=v
 | AWS CLI v2 | latest | Remediation shell steps |
 | OpenShift CLI (`oc` + `kubectl`) | stable | `kubectl_patch` executor; subprocess log streaming |
 | systemd (`journalctl`) | host package | `JournaldStream` — reads mounted host journal |
-| `anthropic` | ≥ 0.25.0 | Claude AI diagnostic path |
+| `anthropic` | ≥ 0.25.0 | Claude AI diagnostic path (`AI_CLIENT=claude`) |
+| `google-generativeai` | ≥ 0.8.0 | Gemini diagnostic path (`AI_CLIENT=gemini`) |
 | `boto3` | ≥ 1.34.0 | `CloudWatchStream` |
 | `kubernetes` | ≥ 28.0.0 | `KubernetesLogStream` SDK mode |
 | `ansible-core` | ≥ 2.16.0 | `AnsibleFramework` |
@@ -336,6 +372,42 @@ This creates the following secrets in `env-healing-agents-ns`:
 | `env-healing-agents-aws-credentials` | AWS credentials file — mounted at `/root/.aws/credentials` |
 | `env-healing-agents-ocm-credentials` | `OCM_API_URL`, `OCM_CLIENT_ID`, `OCM_CLIENT_SECRET` — used by the `refresh_ocm_token` fix strategy |
 
+### AI client configuration
+
+Set `AI_CLIENT` in `deployment.yaml` to choose which model diagnoses issues. Only one may be active at runtime.
+
+**Claude (Vertex AI) — default:**
+
+```yaml
+- name: AI_CLIENT
+  value: "claude"
+# ANTHROPIC_VERTEX_PROJECT_ID and CLOUD_ML_REGION must also be set (see secrets)
+```
+
+**Gemini:**
+
+```yaml
+- name: AI_CLIENT
+  value: "gemini"
+- name: GEMINI_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: env-healing-agents-gemini
+      key: api-key
+- name: GEMINI_MODEL
+  value: "gemini-2.0-flash"   # optional — this is the default
+```
+
+Create the Gemini secret with:
+
+```bash
+oc create secret generic env-healing-agents-gemini \
+  --from-literal=api-key=<YOUR_GEMINI_API_KEY> \
+  -n env-healing-agents-ns
+```
+
+A template for the secret is also provided in `deploy/secrets.yaml`.
+
 To apply manifests manually without `make deploy`:
 
 ```bash
@@ -349,9 +421,9 @@ oc apply -f deploy/service.yaml
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `ANTHROPIC_VERTEX_PROJECT_ID` | Yes | — | GCP project ID with Vertex AI / Claude enabled |
-| `CLOUD_ML_REGION` | Yes | — | GCP region (e.g. `us-east5`) |
-| `GCP_SA_KEY_FILE` | Yes | — | Path to GCP service account key JSON file |
+| `ANTHROPIC_VERTEX_PROJECT_ID` | Claude only | — | GCP project ID with Vertex AI / Claude enabled |
+| `CLOUD_ML_REGION` | Claude only | — | GCP region (e.g. `us-east5`) |
+| `GCP_SA_KEY_FILE` | Claude only | — | Path to GCP service account key JSON file |
 | `AWS_CREDENTIALS_FILE` | Yes | — | Path to AWS credentials file (`~/.aws/credentials` format) |
 | `OCM_API_URL` | Yes | — | OCM API endpoint (e.g. `https://api.openshift.com`) |
 | `OCM_CLIENT_ID` | Yes | — | OCM service account client ID |

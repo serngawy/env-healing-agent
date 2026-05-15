@@ -97,6 +97,18 @@ spec:
             # When "false" (default) issues are detected and diagnosed but no fix is executed.
             - name: REMEDIATION
               value: "false"
+            # AI client selection: "claude" (Vertex AI) or "gemini".
+            # Only one may be active at runtime. Set the matching credentials below.
+            - name: AI_CLIENT
+              value: "claude"
+            # Gemini — uncomment and populate when AI_CLIENT=gemini.
+            # - name: GEMINI_API_KEY
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: env-healing-agents-gemini
+            #       key: api-key
+            # - name: GEMINI_MODEL
+            #   value: "gemini-2.0-flash"
             - name: WATCH_LABEL
               value: "app=test-env"
             - name: WATCH_NAMESPACE_1

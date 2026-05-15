@@ -4,21 +4,28 @@ Diagnostic env-healing-agents
 
 Analyzes detected issues to determine root cause and recommended fixes.
 
-Primary path — Claude AI:
-  The agent sends the raw log chunk surrounding the detected issue to Claude,
-  which returns a structured diagnosis and any new issue patterns it identifies.
-  New patterns are persisted to known_issues.json immediately so future runs
-  benefit from them automatically.
+Primary path — AI client (Claude or Gemini):
+  The agent sends the raw log chunk surrounding the detected issue to the
+  configured AI client, which returns a structured diagnosis and any new issue
+  patterns it identifies. New patterns are persisted to known_issues.json
+  immediately so future runs benefit from them automatically.
+
+  Select the client via the AI_CLIENT environment variable (or --ai-client CLI
+  flag). Only one client may be active at runtime.
+
+  Claude (via Vertex AI):
+    AI_CLIENT=claude
+    ANTHROPIC_VERTEX_PROJECT_ID=<gcp-project>
+    CLOUD_ML_REGION=<region>
+
+  Gemini:
+    AI_CLIENT=gemini
+    GEMINI_API_KEY=<api-key>
+    GEMINI_MODEL=<model>   (default: gemini-2.0-flash)
 
 Fallback — built-in methods:
-  When ANTHROPIC_VERTEX_PROJECT_ID / CLOUD_ML_REGION are absent or the
-  `anthropic` package is not installed, the agent falls back to the hardcoded
-  diagnosis methods.
-
-Enabling Claude:
-  Set ANTHROPIC_VERTEX_PROJECT_ID and CLOUD_ML_REGION in the environment (or
-  in the Kubernetes Secret) and ensure Google Cloud ADC is configured.
-  No API key is required — authentication is handled by ADC.
+  When no AI client is configured or available, the agent falls back to the
+  hardcoded diagnosis methods.
 """
 
 import json
@@ -38,28 +45,70 @@ class DiagnosticAgent(BaseAgent):
     def __init__(self, kb_dir: Path, enabled: bool = True, verbose: bool = False):
         super().__init__("Diagnostic", kb_dir, enabled, verbose)
         self.current_diagnosis = None
-        self._claude = self._init_claude()
+        self._ai_client = self._init_ai_client()
 
     # ── Initialisation ────────────────────────────────────────────────────────
 
-    def _init_claude(self):
-        """Try to create a ClaudeClient; return None when unavailable."""
+    def _init_ai_client(self):
+        """
+        Select and initialise the AI diagnostic client.
+
+        Resolution order:
+          1. AI_CLIENT env var explicitly set to "claude" or "gemini".
+          2. Auto-detect from credentials present in the environment.
+          3. Fall back to built-in methods when neither is configured.
+
+        Logs an error and falls back when both sets of credentials are present
+        but AI_CLIENT is not set — the operator must make the choice explicit.
+        """
+        explicit = os.environ.get("AI_CLIENT", "").lower().strip()
+        has_claude = bool(
+            os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
+            and os.environ.get("CLOUD_ML_REGION")
+        )
+        has_gemini = bool(os.environ.get("GEMINI_API_KEY"))
+
+        if explicit == "claude":
+            return self._try_claude()
+        if explicit == "gemini":
+            return self._try_gemini()
+
+        # Auto-detect — require unambiguous credentials.
+        if has_claude and has_gemini:
+            self.log(
+                "Both Claude and Gemini credentials are present. "
+                "Set AI_CLIENT=claude or AI_CLIENT=gemini to choose one. "
+                "Falling back to built-in diagnosis methods.",
+                "error",
+            )
+            return None
+        if has_claude:
+            return self._try_claude()
+        if has_gemini:
+            return self._try_gemini()
+
+        self.log(
+            "No AI client credentials found — using built-in diagnosis methods. "
+            "Set AI_CLIENT=claude (with Vertex AI vars) or AI_CLIENT=gemini (with GEMINI_API_KEY).",
+            "info",
+        )
+        return None
+
+    def _try_claude(self):
+        """Initialise a ClaudeClient; return None on failure."""
         project_id = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
         region = os.environ.get("CLOUD_ML_REGION")
         if not project_id or not region:
             self.log(
-                "ANTHROPIC_VERTEX_PROJECT_ID or CLOUD_ML_REGION not set "
+                "AI_CLIENT=claude but ANTHROPIC_VERTEX_PROJECT_ID or CLOUD_ML_REGION not set "
                 "— using built-in diagnosis methods",
-                "info",
+                "error",
             )
             return None
         try:
             from .claude_client import ClaudeClient
             client = ClaudeClient()
-            self.log(
-                f"Claude diagnostic client ready (project={project_id}, region={region})",
-                "info",
-            )
+            self.log(f"Claude diagnostic client ready (project={project_id}, region={region})", "info")
             return client
         except ImportError:
             self.log(
@@ -70,6 +119,33 @@ class DiagnosticAgent(BaseAgent):
             return None
         except Exception as e:
             self.log(f"Failed to initialise Claude client: {e} — using built-in methods", "warning")
+            return None
+
+    def _try_gemini(self):
+        """Initialise a GeminiClient; return None on failure."""
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            self.log(
+                "AI_CLIENT=gemini but GEMINI_API_KEY not set "
+                "— using built-in diagnosis methods",
+                "error",
+            )
+            return None
+        try:
+            from .gemini_client import GeminiClient
+            model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+            client = GeminiClient(api_key=api_key, model=model)
+            self.log(f"Gemini diagnostic client ready (model={model})", "info")
+            return client
+        except ImportError:
+            self.log(
+                "google-generativeai package not installed — using built-in diagnosis methods "
+                "(run: pip install google-generativeai)",
+                "warning",
+            )
+            return None
+        except Exception as e:
+            self.log(f"Failed to initialise Gemini client: {e} — using built-in methods", "warning")
             return None
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -90,36 +166,36 @@ class DiagnosticAgent(BaseAgent):
 
         self.log(f"Diagnosing: {issue_type}", "info")
 
-        if self._claude is not None:
-            diagnosis = self._diagnose_with_claude(issue_type, context)
+        if self._ai_client is not None:
+            diagnosis = self._diagnose_with_ai(issue_type, context)
             if diagnosis is not None:
                 diagnosis = self._apply_learned_confidence(diagnosis)
                 self.current_diagnosis = diagnosis
                 return diagnosis
-            self.log("Claude diagnosis failed — falling back to built-in methods", "warning")
+            self.log("AI diagnosis failed — falling back to built-in methods", "warning")
 
         diagnosis = self._diagnose_builtin(issue_type, context)
         diagnosis = self._apply_learned_confidence(diagnosis)
         self.current_diagnosis = diagnosis
         return diagnosis
 
-    # ── Claude primary path ───────────────────────────────────────────────────
+    # ── AI primary path ───────────────────────────────────────────────────────
 
-    def _diagnose_with_claude(self, issue_type: str, context: Dict) -> Optional[Dict]:
-        """Call Claude with the log chunk and persist any new patterns it discovers."""
+    def _diagnose_with_ai(self, issue_type: str, context: Dict) -> Optional[Dict]:
+        """Call the active AI client with the log chunk and persist any new patterns it discovers."""
         log_chunk: List[str] = context.get("buffer", [])
         known_patterns: List[Dict] = self.known_issues.get("patterns", [])
         fix_strategies: Dict = self._load_knowledge("fix_strategies.json").get("fix_strategies", {})
 
         try:
-            diagnosis, new_patterns = self._claude.diagnose(
+            diagnosis, new_patterns = self._ai_client.diagnose(
                 issue_type=issue_type,
                 log_chunk=log_chunk,
                 known_patterns=known_patterns,
                 fix_strategies=fix_strategies,
             )
         except Exception as e:
-            self.log(f"Claude API error: {e}", "error")
+            self.log(f"AI client error: {e}", "error")
             return None
 
         if not diagnosis:
@@ -672,5 +748,5 @@ class DiagnosticAgent(BaseAgent):
             f"  Confidence: {d['confidence'] * 100:.0f}%\n"
             f"  Recommended Fix: {d['recommended_fix']}\n"
             f"  Evidence:\n{evidence_lines}\n"
-            f"  Path: {'Claude AI' if self._claude else 'built-in'}\n"
+            f"  Path: {type(self._ai_client).__name__ if self._ai_client else 'built-in'}\n"
         )

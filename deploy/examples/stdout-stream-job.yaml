@@ -106,6 +106,9 @@ spec:
             # When "false" (default) issues are detected and diagnosed but no fix is executed.
             - name: REMEDIATION
               value: "false"
+            - name: AI_CLIENT
+              value: "claude"
+            # Gemini — set to "gemini" and add GEMINI_API_KEY / GEMINI_MODEL when using Gemini.
             - name: AWS_REGION
               value: "us-east-1"
             - name: NAME_PREFIX

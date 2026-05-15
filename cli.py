@@ -56,6 +56,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--kb-dir", default=str(_DEFAULT_KB), help="Path to knowledge base directory")
     parser.add_argument("--dry-run", action="store_true", help="Detect issues but do not execute fixes")
+
+    # AI client selection — mutually exclusive at runtime
+    ai_group = parser.add_argument_group(
+        "AI client",
+        "Select which AI model to use for diagnosis. Only one may be active at runtime.\n"
+        "Can also be configured via AI_CLIENT / GEMINI_API_KEY / GEMINI_MODEL env vars.",
+    )
+    ai_group.add_argument(
+        "--ai-client",
+        choices=["claude", "gemini"],
+        metavar="{claude,gemini}",
+        help="AI client to use for diagnosis (also: AI_CLIENT env var)",
+    )
+    ai_group.add_argument(
+        "--gemini-api-key",
+        metavar="KEY",
+        help="Gemini API key — implies --ai-client gemini (also: GEMINI_API_KEY env var)",
+    )
+    ai_group.add_argument(
+        "--gemini-model",
+        metavar="MODEL",
+        default=None,
+        help="Gemini model name (default: gemini-2.0-flash; also: GEMINI_MODEL env var)",
+    )
     parser.add_argument(
         "--enable-remediation",
         action="store_true",
@@ -206,6 +230,17 @@ def main(argv=None):
                 poll_interval=args.cloudwatch_poll,
             )
         )
+
+    # AI client — CLI flags take precedence over env vars already in the environment.
+    if args.gemini_api_key:
+        os.environ["GEMINI_API_KEY"] = args.gemini_api_key
+        # Providing a key implies gemini unless the caller explicitly said claude.
+        if not args.ai_client:
+            args.ai_client = "gemini"
+    if args.ai_client:
+        os.environ["AI_CLIENT"] = args.ai_client
+    if args.gemini_model:
+        os.environ["GEMINI_MODEL"] = args.gemini_model
 
     remediation_enabled = args.enable_remediation or (
         os.environ.get("REMEDIATION", "").lower() in ("true", "1", "yes")
